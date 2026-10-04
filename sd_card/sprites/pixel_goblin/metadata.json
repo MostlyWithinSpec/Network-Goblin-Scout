@@ -1,0 +1,39 @@
+{
+  "name": "Pixel Goblin",
+  "author": "Network Goblin",
+  "version": "1.0",
+  "display_width": 64,
+  "display_height": 64,
+  "format": "BMP24",
+  "transparent": "#FF00FF",
+  "states": {
+    "idle": [
+      "idle_01.bmp",
+      "idle_02.bmp"
+    ],
+    "scanning": [
+      "scan_01.bmp",
+      "scan_02.bmp"
+    ],
+    "happy": [
+      "happy_01.bmp",
+      "happy_02.bmp"
+    ],
+    "excited": [
+      "excited_01.bmp",
+      "excited_02.bmp"
+    ],
+    "level_up": [
+      "levelup_01.bmp",
+      "levelup_02.bmp"
+    ],
+    "sleep": [
+      "sleep_01.bmp",
+      "sleep_02.bmp"
+    ],
+    "low_battery": [
+      "low_battery_01.bmp",
+      "low_battery_02.bmp"
+    ]
+  }
+}
