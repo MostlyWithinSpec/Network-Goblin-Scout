@@ -102,6 +102,11 @@ Your progress lives on the **SD card** (`/scout/`), so re-flashing doesn't touch
 - **First install or recovery:** flash `firmware.factory.bin` at `0x0`. This also wipes the chip's
   internal settings, but the goblin's name and ID are restored from the SD card at the next boot.
 
+> ⚠️ **Check the address before you press flash.** Many tools (including Espressif's web tool) default to
+> `0x0`. `firmware.bin` written at `0x0` overwrites the bootloader, and the board boot-loops with
+> `invalid header: 0x5d455b5d` on the serial log. Not bricked: flash `firmware.factory.bin` at `0x0` (or use
+> the web flasher's **Install**) and it's back, progress included.
+
 ### The proper way (PlatformIO)
 
 ```sh

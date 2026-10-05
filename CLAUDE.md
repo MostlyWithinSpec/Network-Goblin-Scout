@@ -160,6 +160,9 @@ v0.3.2 on hardware: boot loop fixed (wrap() stack overflow on the disclaimer, fo
 saving and name survive re-flashing (owner report). One cheap microSD card stopped mounting after the
 boot loop and stays unmountable on this board; another card works. Second board: needs
 `firmware.factory.bin` at 0x0 on first install (`invalid header` from the ROM otherwise).
+Web flasher (scout.networkgoblin.dev/flash, v0.4.0) confirmed working on both boards. The main board's
+boot loop after v0.4.0 was `firmware.bin` flashed at 0x0 by hand (ROM: `invalid header: 0x5d455b5d`, which is
+the app's `[%6u][E]` log string at offset 0x2000 of firmware.bin); fixed by a factory install. Not a firmware bug.
 
 Untested on hardware: goblin beacon + encounters + sniff-offs. Test with one board and a phone: nRF Connect →
 Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
