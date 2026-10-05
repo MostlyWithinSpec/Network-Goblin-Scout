@@ -473,6 +473,7 @@ void Engine::tick() {
   if (now - lastMinuteMs_ >= 60000) {
     lastMinuteMs_ += 60000;
     stats_.uptimeMin++;
+    if (onBattery_) stats_.batteryMin++;
     feed(HUNGER_PER_MIN, BOREDOM_PER_MIN);  // the goblin gets hungry and bored over time
     if (!board_.active && stats_.uptimeMin >= board_.nextAtMin) {
       quests::deal(stats_, level(), esp_random(), board_);

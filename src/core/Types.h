@@ -51,7 +51,8 @@ struct Sighting {
   X(t154Frames) X(zigbeePans) X(threadPans)                                               \
   X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
   X(lastDay) X(streak) X(bestStreak)                                                     \
-  X(questsDone) X(boardsCleared) X(hunger) X(boredom)
+  X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
+  X(batteryMin)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;

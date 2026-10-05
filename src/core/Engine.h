@@ -13,6 +13,7 @@ class Engine {
   void tick();                                       // periodic save, uptime
   void saveNow();
   void pet();                                        // the user tapped the goblin
+  void setOnBattery(bool b) { onBattery_ = b; }      // counts battery minutes
 
   Stats& stats() { return stats_; }
   Settings& settings() { return settings_; }
@@ -37,6 +38,7 @@ class Engine {
   bool dirty_ = false;
   bool dayChecked_ = false;
   bool saveSoon_ = false;
+  bool onBattery_ = false;
   uint32_t lastSaveMs_ = 0;
   uint32_t lastMinuteMs_ = 0;
   uint32_t bonusAcc_ = 0;      // happy-goblin XP bonus, in quarter points

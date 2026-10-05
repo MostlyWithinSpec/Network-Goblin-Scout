@@ -162,6 +162,7 @@ const char* const kPetQuips[] = {"Hehe!", "That tickles!", "More pats!", "*happy
 const char* const kMeshQuips[] = {"Smart home sighted!", "Bzzz... Zigbee!", "Mesh chatter!"};
 const char* const kHungryQuips[] = {"So... hungry...", "Feed me packets!", "Need new networks...", "*stomach growls*"};
 const char* const kBoredQuips[] = {"Booored.", "Same old networks...", "Let's go somewhere new!", "Nothing new here..."};
+const char* const kLowBattQuips[] = {"Running on fumes...", "Need... a charger...", "So... sleepy..."};
 const char* const kHappyQuips[] = {"Life is good.", "Best hoard ever!", "We make a great team!", "Fully fed, fully nosy."};
 
 // ---------------------------------------------------------------------------
@@ -269,6 +270,21 @@ void drawStatusBar(gfx::Surface& s, const UiModel& m) {
   }
   // right side icons
   int16_t rx = W - 12;
+  if (m.battPresent) {  // battery: outline, fill level, % and a bolt while charging
+    uint16_t bc = m.battCharging ? kGreen : m.battPct <= 15 ? kRed : m.battPct <= 35 ? kAmber : kText;
+    int16_t bx = W - 23;
+    s.roundRect(bx, 5, 18, 10, 2, bc);
+    s.fillRect(bx + 18, 8, 2, 4, bc);
+    s.fillRect(bx + 2, 7, (int16_t)(14 * m.battPct / 100), 6, bc);
+    if (m.battCharging) {
+      s.fillTriangle(bx + 10, 3, bx + 6, 11, bx + 10, 10, kAmber);
+      s.fillTriangle(bx + 8, 10, bx + 12, 9, bx + 8, 17, kAmber);
+    }
+    char pc[6];
+    snprintf(pc, sizeof(pc), "%u%%", m.battPct);
+    s.textRight(fSmall(), bx - 3, 1, pc, bc);
+    rx = bx - 15 - Surface::textWidth(fSmall(), pc);
+  }
   icon(s, Glyph::Sd, rx, 10, 12, m.sd ? kGreen : kRed);
   rx -= 20;
   uint16_t gc = !m.gpsPresent ? kFaint : m.gpsFix ? kGreen : kAmber;
@@ -1668,6 +1684,7 @@ void render(gfx::Surface& s, const UiModel& m) {
   if (!quip || (int32_t)(m.now - quipUntil) > 0) {
     if ((int32_t)(m.now - nextIdleQuip) > 0 && companion.state(m.now) != CState::Sleeping) {
       if (m.nearbyCount) say("I sense another goblin...", m.now);
+      else if (m.battPresent && !m.battCharging && m.battPct <= 15) say(pick(kLowBattQuips, 3), m.now);
       else if (m.mood == Mood::Starving || m.mood == Mood::Hungry) say(pick(kHungryQuips, 4), m.now);
       else if (m.mood == Mood::Bored) say(pick(kBoredQuips, 4), m.now);
       else if (m.mood == Mood::Happy && (rnd() & 1)) say(pick(kHappyQuips, 4), m.now);
@@ -1677,7 +1694,8 @@ void render(gfx::Surface& s, const UiModel& m) {
 
   uint32_t t0 = hooks.micros ? hooks.micros() : 0;
   companion.setHat(m.settings->hat);
-  companion.setDroopy(m.mood == Mood::Hungry || m.mood == Mood::Starving);
+  companion.setDroopy(m.mood == Mood::Hungry || m.mood == Mood::Starving ||
+                      (m.battPresent && !m.battCharging && m.battPct <= 15));
   drawBackground(s, m);
   uint32_t t1 = hooks.micros ? hooks.micros() : 0;
   if (screen == Screen::Disclaimer || screen == Screen::Naming) {

@@ -77,6 +77,8 @@ int main() {
   model.myName = "Snagpacket";
   model.myId = 0x5A1D2B3C;
   model.beaconOn = true;
+  model.battPresent = true;
+  model.battPct = 72;
   model.fwVersion = "0.3.0";
   stats.questsDone = 4;
   stats.hunger = 380;

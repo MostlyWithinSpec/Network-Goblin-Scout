@@ -17,6 +17,9 @@ struct UiModel {
   uint8_t sats = 0;
   const char* scanning = nullptr;  // name of the radio scanning right now, or null
   bool beaconOn = false;
+  bool battPresent = false;          // MAX17048 fuel gauge fitted
+  uint8_t battPct = 0;
+  bool battCharging = false;
 
   // this goblin + others nearby
   const char* myName = "Goblin";

@@ -9,6 +9,7 @@
 #include "core/Achievements.h"
 #include "core/Engine.h"
 #include "diag/Diagnostics.h"
+#include "hal/Battery.h"
 #include "hal/Display.h"
 #include "hal/Fx.h"
 #include "hal/Gps.h"
@@ -152,6 +153,9 @@ void fillModel(uint32_t now) {
   model.sats = gps::satellites();
   model.scanning = scans.activeName();
   model.beaconOn = peer::beaconOn();
+  model.battPresent = battery::present();
+  model.battPct = battery::percent();
+  model.battCharging = battery::charging();
   model.myName = peer::self().name;
   model.myHue = peer::self().hue;
   model.myId = peer::self().id;
@@ -227,6 +231,7 @@ void setup() {
     diag::run(radios, sizeof(radios) / sizeof(radios[0]));
   }
 
+  battery::begin();
   showSplash("opening the hoard...");
   engine.begin();
 
@@ -288,6 +293,8 @@ void loop() {
   uint32_t now = millis();
 
   if (engine.settings().gps) gps::poll();
+  battery::poll();
+  engine.setOnBattery(battery::discharging());
   scans.tick();
 
   if (now - lastGeoMs > 1000) {
