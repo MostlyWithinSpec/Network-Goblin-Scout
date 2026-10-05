@@ -3,6 +3,7 @@
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
 #include <math.h>
+#include <initializer_list>
 #include "../hal/Gps.h"
 #include "../hal/Storage.h"
 #include "Achievements.h"
@@ -435,6 +436,11 @@ void Engine::checkAchievements() {
 }
 
 void Engine::push(EventType t, uint32_t v, const char* text, const NearbyPeer* p) {
+  // Big moments are saved within a few seconds instead of waiting for the periodic save,
+  // so unplugging (or re-flashing) right after one doesn't lose it.
+  if (t == EventType::LevelUp || t == EventType::Achievement || t == EventType::QuestDone ||
+      t == EventType::BoardCleared || t == EventType::HatUnlocked || t == EventType::PeerNew)
+    saveSoon_ = true;
   size_t next = (qHead_ + 1) % kQueue;
   if (next == qTail_) qTail_ = (qTail_ + 1) % kQueue;  // drop oldest
   UiEvent& e = queue_[qHead_];
@@ -475,11 +481,13 @@ void Engine::tick() {
     checkAchievements();
     dirty_ = true;
   }
+  if (saveSoon_ && now - lastSaveMs_ > 3000) saveNow();
   if (dirty_ && now - lastSaveMs_ > STATE_SAVE_INTERVAL_MS) saveNow();
 }
 
 void Engine::saveNow() {
   lastSaveMs_ = millis();
+  saveSoon_ = false;
   if (!storage::ok()) return;
   JsonDocument doc;
   doc["v"] = 2;
@@ -523,6 +531,9 @@ void Engine::saveNow() {
   set["invert"] = settings_.invert;
   set["fastDisplay"] = settings_.fastDisplay;
   set["hat"] = settings_.hat;
+  set["goblinId"] = settings_.goblinId;
+  set["name"] = settings_.goblinName;
+  set["agreed"] = settings_.agreed;
   set["sprites"] = settings_.spritePack;
 
   String out;
@@ -531,13 +542,22 @@ void Engine::saveNow() {
 }
 
 void Engine::loadState() {
-  String text = storage::readText(kStatePath);
-  if (text.isEmpty()) return;
+  // state.json, else the backup from the last save, else a finished temp file.
   JsonDocument doc;
-  if (deserializeJson(doc, text)) {
-    log_w("engine: state.json unreadable, starting fresh");
-    return;
+  bool ok = false;
+  for (const char* suffix : {"", ".bak", ".tmp"}) {
+    String path = String(kStatePath) + suffix;
+    String text = storage::readText(path.c_str());
+    if (text.isEmpty()) continue;
+    if (deserializeJson(doc, text)) {
+      log_w("engine: %s unreadable", path.c_str());
+      continue;
+    }
+    if (suffix[0]) log_w("engine: recovered progress from %s", path.c_str());
+    ok = true;
+    break;
   }
+  if (!ok) return;
 #define NG_LOAD_COUNTER(n) stats_.n = doc[#n] | 0;
   NG_SAVED_COUNTERS(NG_LOAD_COUNTER)
 #undef NG_LOAD_COUNTER
@@ -587,6 +607,9 @@ void Engine::loadState() {
     settings_.invert = set["invert"] | false;
     settings_.fastDisplay = set["fastDisplay"] | true;
     settings_.hat = set["hat"] | 0;
+    settings_.goblinId = set["goblinId"] | 0;
+    settings_.goblinName = set["name"] | "";
+    settings_.agreed = set["agreed"] | false;
     settings_.spritePack = set["sprites"] | "goblin";
   }
 }

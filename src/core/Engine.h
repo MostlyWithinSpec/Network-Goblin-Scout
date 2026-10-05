@@ -36,6 +36,7 @@ class Engine {
   uint8_t salt_[16] = {0};
   bool dirty_ = false;
   bool dayChecked_ = false;
+  bool saveSoon_ = false;
   uint32_t lastSaveMs_ = 0;
   uint32_t lastMinuteMs_ = 0;
   uint32_t bonusAcc_ = 0;      // happy-goblin XP bonus, in quarter points

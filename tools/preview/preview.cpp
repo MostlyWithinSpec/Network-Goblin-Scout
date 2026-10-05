@@ -1,6 +1,7 @@
 // Renders the real UI code on a PC into PNG screenshots (via PPM + tools/preview/run.sh).
 // No hardware needed: the model is filled with made-up stats.
 #include <cstdio>
+#include <utility>
 #include <vector>
 #include "core/Achievements.h"
 #include "core/Hats.h"
@@ -111,6 +112,18 @@ int main() {
   ui::splash(surf, 900, "warming up radios...");
   save("01_splash");
 
+  // first run: disclaimer, then type a name on the keyboard
+  ui::startOnboarding(true, true);
+  run(600);
+  save("01b_disclaimer");
+  tap(160, 216);                                   // I UNDERSTAND
+  run(200);
+  for (auto k : {std::make_pair(146, 132), {113, 96}, {206, 96}, {192, 170}}) tap(k.first, k.second);  // G R U B
+  run(300);
+  save("01c_naming");
+  tap(270, 212);                                   // DONE
+  run(400);
+
   ui::pet().setBase(CState::Idle);
   run(3000);
   save("02_home_idle");
@@ -139,6 +152,10 @@ int main() {
   ui::onEvent(ev(EventType::Achievement, 67, "Not Alone"), now);
   run(1300);
   save("06_achievement");
+  run(3000);
+  for (int i : {0, 1, 2, 3, 5, 9, 12, 19, 28, 41}) ui::onEvent(ev(EventType::Achievement, i, "x"), now);
+  run(3500 * 2 + 1600);  // two single cards play, then the batch
+  save("06b_achievement_batch");
   run(3000);
 
   UiEvent pe = ev(EventType::PeerNew, 12, "Met Grimwick!");

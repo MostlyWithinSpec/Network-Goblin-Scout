@@ -6,6 +6,7 @@
 #include "../core/Achievements.h"
 #include "../core/Hats.h"
 #include "../core/Quests.h"
+#include "../social/PeerCodec.h"
 #include "HatArt.h"
 #include "Theme.h"
 #include "Widgets.h"
@@ -26,7 +27,7 @@ const float kPi = 3.14159265f;
 // ---------------------------------------------------------------------------
 // State
 // The first five are the tabs, in tab order.
-enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share };
+enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming };
 const int kTabCount = 5;
 
 Hooks hooks;
@@ -73,7 +74,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -83,6 +84,9 @@ struct Overlay {
   uint8_t peerHue;
   uint8_t peerHat;
   bool isNew;
+  uint8_t ids[12];   // AchBatch: achievement indices shown
+  uint8_t idCount;
+  uint16_t total;    // AchBatch: how many in the batch
 };
 Overlay overlays[6];
 int overlayCount = 0;
@@ -861,7 +865,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
-      snprintf(b, sizeof(b), "NG Scout fw %s", m.fwVersion);
+      snprintf(b, sizeof(b), "tap to rename  -  NG Scout fw %s", m.fwVersion);
       s.text(fSmall(), 16, y + 17, b, kDim);
       continue;
     }
@@ -945,7 +949,7 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
 }
 
 uint32_t overlayLength(OvType t) {
-  return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat ? 3600 : 3300;
+  return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
 void startOverlay(uint32_t now) {
@@ -961,6 +965,12 @@ void startOverlay(uint32_t now) {
       break;
     case OvType::Achievement:
       emit(PKind::Spark, W / 2, 98, 24, kGoldC, 120, 1.2f);
+      sfx(kSfxAchievement);
+      led(50, 50, 0, 600);
+      companion.react(CState::Achievement, 3000, now);
+      break;
+    case OvType::AchBatch:
+      emit(PKind::Spark, W / 2, 110, 30, kGoldC, 150, 1.4f);
       sfx(kSfxAchievement);
       led(50, 50, 0, 600);
       companion.react(CState::Achievement, 3000, now);
@@ -1089,6 +1099,29 @@ void drawHatOverlay(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now)
   }
 }
 
+void drawAchBatch(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, 0x0000, a8(232 * in));
+  rays(s, W / 2, 110, kGoldC, a8(25 * in), now / 2500.0f);
+  char b[32];
+  snprintf(b, sizeof(b), "+%u ACHIEVEMENTS!", o.total);
+  s.textCentered(fBig(), W / 2, 22, b, kGoldC, a8(255 * in));
+  int n = o.idCount;
+  int cols = n < 6 ? n : 6;
+  for (int i = 0; i < n; i++) {
+    float pop = easeBack((t - 200 - i * 90) / 350.0f);
+    if (pop <= 0.02f) continue;
+    int col = i % 6, row = i / 6;
+    int16_t cx = W / 2 - (cols - 1) * 22 + col * 44, cy = 90 + row * 48;
+    medallion(s, cx, cy, 18 * pop, ACHIEVEMENTS[o.ids[i]], true, now);
+  }
+  if (o.total > o.idCount) {
+    snprintf(b, sizeof(b), "...and %u more", o.total - o.idCount);
+    s.textCentered(fSmall(), W / 2, 178, b, kDim, a8(255 * in));
+  }
+  s.textCentered(fSmall(), W / 2, 202, "see them all in LOOT", kDim, a8(255 * in));
+}
+
 void drawOverlay(gfx::Surface& s, const UiModel& m) {
   if (!overlayCount) return;
   if (!overlayStarted) startOverlay(m.now);
@@ -1105,6 +1138,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::Achievement: drawAchievement(s, o, t, m.now); break;
     case OvType::Encounter: drawEncounter(s, o, t, m.now, m); break;
     case OvType::Hat: drawHatOverlay(s, o, t, m.now); break;
+    case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
   }
 }
 
@@ -1135,6 +1169,165 @@ void drawParticles(gfx::Surface& s) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// First run: disclaimer and naming
+bool needName = false;
+Screen afterNaming = Screen::Home;
+char nameBuf[peercodec::kMaxName + 1] = "";
+bool caps = true;
+int lastKey = -1;
+uint32_t lastKeyAt = 0;
+
+const char* const kKeyRows[3] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+enum Special { kShift = 100, kDel, kDice, kSpace, kOk };
+
+struct KeyRect { int16_t x, y, w, h; int code; };
+int keys(KeyRect* out) {  // all keys, returns count
+  int n = 0;
+  for (int i = 0; i < 10; i++) out[n++] = {(int16_t)(6 + i * 31), 78, 29, 34, kKeyRows[0][i]};
+  for (int i = 0; i < 9; i++) out[n++] = {(int16_t)(21 + i * 31), 116, 29, 34, kKeyRows[1][i]};
+  out[n++] = {6, 154, 44, 34, kShift};
+  for (int i = 0; i < 7; i++) out[n++] = {(int16_t)(54 + i * 31), 154, 29, 34, kKeyRows[2][i]};
+  out[n++] = {271, 154, 43, 34, kDel};
+  out[n++] = {6, 194, 74, 38, kDice};
+  out[n++] = {84, 194, 140, 38, kSpace};
+  out[n++] = {228, 194, 86, 38, kOk};
+  return n;
+}
+
+void drawNaming(gfx::Surface& s, const UiModel& m) {
+  s.textCentered(fTitle(), W / 2, 8, afterNaming == Screen::Setup ? "RENAME YOUR GOBLIN" : "NAME YOUR GOBLIN", kCyan);
+  panel(s, 8, 28, W - 16, 42, kCyan);
+  Companion::Look look;
+  look.scale = 0.55f;
+  look.aura = false;
+  look.hat = m.settings->hat;
+  Companion::drawSmall(s, 30, 70, m.now, look);
+  if (nameBuf[0]) {
+    int16_t end = s.textCentered(fBig(), W / 2 + 10, 36, nameBuf, kGreen);
+    if ((m.now / 450) % 2) s.fillRect(end + 2, 38, 2, 24, kGreen);
+  } else {
+    s.textCentered(fBody(), W / 2 + 10, 40, "type a name, or roll the dice", kFaint);
+  }
+  char cnt[8];
+  snprintf(cnt, sizeof(cnt), "%u/%u", (unsigned)strlen(nameBuf), (unsigned)peercodec::kMaxName);
+  s.textRight(fSmall(), W - 14, 52, cnt, kDim);
+
+  KeyRect k[32];
+  int n = keys(k);
+  for (int i = 0; i < n; i++) {
+    bool hot = k[i].code == lastKey && m.now - lastKeyAt < 150;
+    bool ok = k[i].code == kOk;
+    bool enabled = !ok || nameBuf[0];
+    uint16_t edge = ok ? (enabled ? kGreen : kFaint) : (k[i].code == kShift && caps ? kCyan : kEdge);
+    s.fillRoundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, hot ? kCyan : (ok && enabled ? gfx::dim(kGreen, 70) : kPanel), 235);
+    s.roundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, edge);
+    int16_t cx = k[i].x + k[i].w / 2, ty = k[i].y + (k[i].h - 20) / 2;
+    uint16_t tc = hot ? kBgBottom : kText;
+    switch (k[i].code) {
+      case kShift: s.textCentered(fBody(), cx, ty, caps ? "AB" : "ab", caps ? kCyan : kDim); break;
+      case kDel: s.textCentered(fBody(), cx, ty, "DEL", tc); break;
+      case kDice: s.textCentered(fBody(), cx, ty, "random", tc); break;
+      case kSpace: s.textCentered(fBody(), cx, ty, "space", kDim); break;
+      case kOk: s.textCentered(fBody(), cx, ty, "DONE", enabled ? kGreen : kFaint); break;
+      default: {
+        char c[2] = {(char)(caps ? k[i].code : k[i].code + 32), 0};
+        s.textCentered(fBody(), cx, ty, c, tc);
+      }
+    }
+  }
+}
+
+void finishNaming(uint32_t now) {
+  size_t len = strlen(nameBuf);
+  while (len && nameBuf[len - 1] == ' ') nameBuf[--len] = 0;  // trim
+  if (!len) return;
+  if (hooks.named) hooks.named(nameBuf);
+  sfx(kSfxQuest);
+  screen = afterNaming;
+  screenChangedAt = now;
+  companion.react(CState::Excited, 2000, now);
+  static char hello[40];
+  snprintf(hello, sizeof(hello), "I'm %s!", nameBuf);
+  say(hello, now + 300, 3500);
+}
+
+void tapNaming(int16_t x, int16_t y, uint32_t now) {
+  KeyRect k[32];
+  int n = keys(k);
+  for (int i = 0; i < n; i++) {
+    if (x < k[i].x || x >= k[i].x + k[i].w || y < k[i].y || y >= k[i].y + k[i].h) continue;
+    int code = k[i].code;
+    lastKey = code;
+    lastKeyAt = now;
+    sfx(kSfxTap);
+    size_t len = strlen(nameBuf);
+    switch (code) {
+      case kShift: caps = !caps; break;
+      case kDel: if (len) nameBuf[len - 1] = 0; caps = len <= 1; break;
+      case kDice: {
+        char gen[peercodec::kMaxName + 1];
+        peercodec::nameFor(rnd(), gen, sizeof(gen));
+        snprintf(nameBuf, sizeof(nameBuf), "%s", gen);
+        caps = false;
+        break;
+      }
+      case kSpace: if (len && len < peercodec::kMaxName && nameBuf[len - 1] != ' ') { nameBuf[len] = ' '; nameBuf[len + 1] = 0; caps = true; } break;
+      case kOk: finishNaming(now); break;
+      default:
+        if (len < peercodec::kMaxName) {
+          nameBuf[len] = (char)(caps ? code : code + 32);
+          nameBuf[len + 1] = 0;
+          caps = false;  // capital first letter, then lowercase
+        }
+    }
+    return;
+  }
+}
+
+void startNaming(Screen returnTo, const char* current) {
+  afterNaming = returnTo;
+  snprintf(nameBuf, sizeof(nameBuf), "%s", current ? current : "");
+  caps = !nameBuf[0];
+  screen = Screen::Naming;
+}
+
+void drawDisclaimer(gfx::Surface& s, const UiModel& m) {
+  s.textCentered(fTitle(), W / 2, 8, "BEFORE WE START", kCyan);
+  panel(s, 8, 28, W - 16, 166);
+  static const char* const kParas[] = {
+      "NG Scout passively listens to Wi-Fi, Bluetooth and Zigbee/Thread signals around you. It never "
+      "connects to, decodes or interferes with anyone's networks or devices, and only keeps scrambled IDs "
+      "and counts.",
+      "Rules about radio listening differ between countries. You are responsible for using it legally "
+      "and respectfully.",
+      "A hobby project, provided as-is with no warranty."};
+  int16_t y = 33;
+  for (const char* p : kParas) {
+    char lines[7][64];
+    int n = wrap(fSmall(), p, W - 36, lines, 7);
+    for (int i = 0; i < n; i++, y += 15) s.text(fSmall(), 18, y, lines[i], kText);
+    y += 6;
+  }
+  float pulse = 0.5f + 0.5f * sinf(m.now / 400.0f);
+  s.glow(W / 2, 214, 90, kCyan, a8(40 + 40 * pulse));
+  s.fillRoundRect(60, 200, W - 120, 32, 16, kCyan);
+  s.textCentered(fBody(), W / 2, 205, "I UNDERSTAND", kBgBottom);
+}
+
+void tapDisclaimer(int16_t x, int16_t y, uint32_t now) {
+  if (x < 60 || x > W - 60 || y < 196 || y > 236) return;
+  sfx(kSfxTap);
+  if (hooks.agreed) hooks.agreed();
+  if (needName) {
+    startNaming(Screen::Home, "");
+  } else {
+    screen = Screen::Home;
+    screenChangedAt = now;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Input
 void goTo(Screen sc, uint32_t now) {
@@ -1162,11 +1355,13 @@ void toggleSetting(int row, const UiModel& m) {
 
 void onTap(int16_t x, int16_t y, const UiModel& m) {
   uint32_t now = m.now;
-  if (overlayCount) {  // tap skips the current celebration
+  if (overlayCount && screen != Screen::Disclaimer && screen != Screen::Naming) {  // tap skips the celebration
     overlayStart = now - overlayLength(overlays[0].type) + 200;
     return;
   }
   sfx(kSfxTap);
+  if (screen == Screen::Disclaimer) { tapDisclaimer(x, y, now); return; }
+  if (screen == Screen::Naming) { tapNaming(x, y, now); return; }
   if (screen == Screen::Share) {  // tap anywhere closes the card
     goTo(Screen::Home, now);
     return;
@@ -1238,6 +1433,8 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
       } else if (row == 10) {
         screen = Screen::Share;
         screenChangedAt = now;
+      } else if (row == 11) {
+        startNaming(Screen::Setup, m.myName);
       } else {
         toggleSetting(row, m);
       }
@@ -1287,6 +1484,14 @@ void begin(const Hooks& h, uint16_t* bgBuffer) {
 }
 
 Companion& pet() { return companion; }
+
+void startOnboarding(bool disclaimer, bool name) {
+  needName = name;
+  if (disclaimer) screen = Screen::Disclaimer;
+  else if (name) startNaming(Screen::Home, "");
+}
+
+bool onboarding() { return screen == Screen::Disclaimer || (screen == Screen::Naming && afterNaming == Screen::Home); }
 
 bool animating() { return overlayCount > 0 || bannerCount > 0 || partCount > 0; }
 
@@ -1364,7 +1569,26 @@ void onEvent(const UiEvent& e, uint32_t now) {
       sfx(kSfxChannel);
       break;
     case EventType::LevelUp: overlay(OvType::LevelUp); break;
-    case EventType::Achievement: overlay(OvType::Achievement); break;
+    case EventType::Achievement: {
+      // More than two queued? Fold the rest into one "+N achievements" card.
+      int pending = 0;
+      for (int i = overlayStarted ? 1 : 0; i < overlayCount; i++)
+        if (overlays[i].type == OvType::Achievement || overlays[i].type == OvType::AchBatch) pending++;
+      if (pending < 2) { overlay(OvType::Achievement); break; }
+      Overlay* batch = nullptr;
+      for (int i = overlayStarted ? 1 : 0; i < overlayCount; i++)
+        if (overlays[i].type == OvType::AchBatch) batch = &overlays[i];
+      if (!batch) {
+        if (overlayCount == 6) break;
+        batch = &overlays[overlayCount++];
+        batch->type = OvType::AchBatch;
+        batch->idCount = 0;
+        batch->total = 0;
+      }
+      if (batch->idCount < 12) batch->ids[batch->idCount++] = (uint8_t)e.value;
+      batch->total++;
+      break;
+    }
     case EventType::QuestDone:
       banner(Glyph::Check, kGreen);
       companion.react(CState::Excited, 1800, now);
@@ -1453,6 +1677,12 @@ void render(gfx::Surface& s, const UiModel& m) {
   companion.setDroopy(m.mood == Mood::Hungry || m.mood == Mood::Starving);
   drawBackground(s, m);
   uint32_t t1 = hooks.micros ? hooks.micros() : 0;
+  if (screen == Screen::Disclaimer || screen == Screen::Naming) {
+    if (screen == Screen::Disclaimer) drawDisclaimer(s, m);
+    else drawNaming(s, m);
+    drawParticles(s);
+    return;
+  }
 
   // content slides in after a tab change
   float slide = 1 - easeOut((m.now - screenChangedAt) / 260.0f);
@@ -1466,6 +1696,8 @@ void render(gfx::Surface& s, const UiModel& m) {
     case Screen::Share: drawShare(s, m); break;
     case Screen::Setup: drawSetup(s, m); break;
     case Screen::TouchTest: drawTouchTest(s, m); break;
+    case Screen::Disclaimer:
+    case Screen::Naming: break;  // drawn full-screen above
   }
   s.offset(0, 0);
   if (slide > 0.01f) s.fillRect(0, kBodyY, W, kBodyH, kBgBottom, a8(200 * slide));

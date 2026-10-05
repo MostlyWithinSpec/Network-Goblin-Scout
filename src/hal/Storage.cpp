@@ -46,8 +46,14 @@ bool writeTextAtomic(const char* path, const String& text) {
   size_t n = f.print(text);
   f.close();
   if (n != text.length()) return false;
-  if (SD.exists(path)) SD.remove(path);
-  return SD.rename(tmp, path);
+  // Keep the previous version as <path>.bak until the new one is in place, so a reset at
+  // any moment leaves at least one complete copy (see Engine::loadState for recovery).
+  String bak = String(path) + ".bak";
+  if (SD.exists(bak)) SD.remove(bak);
+  if (SD.exists(path) && !SD.rename(path, bak)) SD.remove(path);
+  if (SD.rename(tmp, path)) return true;
+  if (SD.exists(bak)) SD.rename(bak, path);  // put the old one back
+  return false;
 }
 
 bool append(const char* path, const String& text) {

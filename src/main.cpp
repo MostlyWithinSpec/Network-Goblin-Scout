@@ -121,6 +121,16 @@ ui::Hooks makeHooks() {
   h.settingsChanged = [] { engine.settingsChanged(); };
   h.pet = [] { engine.pet(); };
   h.hat = peer::setHat;
+  h.agreed = [] {
+    engine.settings().agreed = true;
+    peer::setAgreed();
+    engine.settingsChanged();
+  };
+  h.named = [](const char* name) {
+    peer::setName(name);
+    engine.settings().goblinName = peer::self().name;
+    engine.settingsChanged();
+  };
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -220,7 +230,17 @@ void setup() {
   showSplash("opening the hoard...");
   engine.begin();
 
-  const Settings& st = engine.settings();
+  Settings& st = engine.settings();
+  // Identity: the SD copy wins (a factory flash wipes NVS), then both copies are synced.
+  peer::begin(st.goblinId, st.goblinName.c_str());
+  bool agreed = st.agreed || peer::agreedNvs();
+  if (st.goblinId != peer::self().id || (peer::named() && st.goblinName != peer::self().name) || agreed != st.agreed) {
+    st.goblinId = peer::self().id;
+    if (peer::named()) st.goblinName = peer::self().name;
+    st.agreed = agreed;
+    engine.settingsChanged();
+  }
+
   display::setBrightness(st.brightness);
   display::setInverted(st.invert);
   display::setFast(st.fastDisplay);
@@ -229,6 +249,26 @@ void setup() {
   if (st.gps) gps::begin();
   if (!pack.load(st.spritePack)) log_i("no sprite pack, using built-in goblin");
 
+  // First run: disclaimer, then name the goblin. Nothing is scanned until this is done.
+  if (screen && (!agreed || !peer::named())) {
+    ui::startOnboarding(!agreed, !peer::named());
+    uint32_t last = 0;
+    while (ui::onboarding()) {
+      uint32_t now = millis();
+      int16_t x = 0, y = 0;
+      bool down = touch::read(x, y);
+      fillModel(now);
+      ui::onTouch(down, x, y, model);
+      if (now - last >= UI_FRAME_MS) {
+        last = now;
+        ui::render(*screen, model);
+        display::flush();
+      }
+      fx::update();
+      delay(1);
+    }
+  }
+
   showSplash("warming up radios...");
   scans.add(&wifiScanner);
   scans.add(&bleScanner);
@@ -236,7 +276,6 @@ void setup() {
   scans.begin();
 
   // Goblin identity + "I'm a goblin" beacon (needs BLE, which scans.begin() started).
-  peer::begin();
   peer::setHat(st.hat);
   if (st.beacon) peer::startBeacon(engine.level());
 

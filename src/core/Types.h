@@ -93,6 +93,9 @@ struct Settings {
   bool invert = false;
   bool fastDisplay = true;      // "Turbo display": SPI at full crystal speed
   uint8_t hat = 0;              // equipped hat id (0 = none), see core/Hats.h
+  uint32_t goblinId = 0;        // copy of the NVS identity: survives a factory flash (which wipes NVS)
+  String goblinName = "";       // chosen by the owner at first boot ("" = not named yet)
+  bool agreed = false;          // first-run disclaimer accepted
   String spritePack = "goblin";
 };
 

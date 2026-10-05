@@ -25,6 +25,8 @@ struct Hooks {
   void (*sfx)(Sfx s) = nullptr;
   void (*led)(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) = nullptr;
   uint32_t (*micros)() = nullptr;        // optional: enables profile()
+  void (*agreed)() = nullptr;            // first-run disclaimer accepted
+  void (*named)(const char* name) = nullptr;  // goblin (re)named
 };
 
 // Time spent in each part of the last render(), in microseconds (needs Hooks::micros).
@@ -42,6 +44,11 @@ void onTouch(bool down, int16_t x, int16_t y, const UiModel& m);
 void render(gfx::Surface& s, const UiModel& m);
 void splash(gfx::Surface& s, uint32_t now, const char* line);
 Companion& pet();
+
+// First-run flow: disclaimer and/or naming, shown full-screen before the normal tabs.
+// main.cpp keeps rendering and feeding touches until onboarding() returns false.
+void startOnboarding(bool disclaimer, bool name);
+bool onboarding();
 bool animating();  // an overlay or transition is running (main can skip frame limiting)
 
 // For the preview tool.

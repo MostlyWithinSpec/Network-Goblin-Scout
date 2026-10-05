@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.3.0"
+#define NG_FW_VERSION           "0.3.1"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -37,7 +37,7 @@
 #define SCAN_REST_MS            1500
 
 // ---- Persistence ----------------------------------------------------------
-#define STATE_SAVE_INTERVAL_MS  60000
+#define STATE_SAVE_INTERVAL_MS  30000      // plus within 3 s of level-ups, achievements, quests
 
 // ---- GPS ------------------------------------------------------------------
 #define GPS_BAUD                9600

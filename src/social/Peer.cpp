@@ -7,6 +7,7 @@ namespace {
 peercodec::Info me;
 bool advertising = false;
 bool addrSet = false;
+bool isNamed = false;
 
 void advertise() {
   uint8_t payload[peercodec::kMaxLen];
@@ -29,19 +30,52 @@ void advertise() {
 
 namespace peer {
 
-void begin() {
+void begin(uint32_t savedId, const char* savedName) {
   Preferences prefs;
   prefs.begin("ngscout", false);
-  uint32_t id = prefs.getUInt("peerId", 0);
+  uint32_t nvsId = prefs.isKey("peerId") ? prefs.getUInt("peerId", 0) : 0;
+  uint32_t id = savedId ? savedId : nvsId;
   if (!id) {
     do id = esp_random(); while (!id);
-    prefs.putUInt("peerId", id);
   }
+  if (nvsId != id) prefs.putUInt("peerId", id);
+  String stored = prefs.isKey("name") ? prefs.getString("name", "") : String();
+  String name = (savedName && savedName[0]) ? String(savedName) : stored;
+  if (name.length() && stored != name) prefs.putString("name", name);
   prefs.end();
   me.id = id;
   me.hue = (uint8_t)(id >> 24);
-  peercodec::nameFor(id, me.name, sizeof(me.name));
-  log_i("peer: I am %s", me.name);
+  isNamed = name.length() > 0;
+  if (isNamed) strlcpy(me.name, name.c_str(), sizeof(me.name));
+  else peercodec::nameFor(id, me.name, sizeof(me.name));  // placeholder until named
+  log_i("peer: I am %s%s", me.name, isNamed ? "" : " (not named yet)");
+}
+
+bool named() { return isNamed; }
+
+void setName(const char* name) {
+  strlcpy(me.name, name, sizeof(me.name));
+  isNamed = me.name[0] != 0;
+  Preferences prefs;
+  prefs.begin("ngscout", false);
+  prefs.putString("name", me.name);
+  prefs.end();
+  if (advertising) advertise();
+}
+
+bool agreedNvs() {
+  Preferences prefs;
+  prefs.begin("ngscout", false);  // read-write: read-only fails (and logs) if the namespace is new
+  bool a = prefs.isKey("agreed") && prefs.getBool("agreed", false);
+  prefs.end();
+  return a;
+}
+
+void setAgreed() {
+  Preferences prefs;
+  prefs.begin("ngscout", false);
+  prefs.putBool("agreed", true);
+  prefs.end();
 }
 
 const peercodec::Info& self() { return me; }
