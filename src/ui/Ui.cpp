@@ -33,7 +33,7 @@ uint32_t screenChangedAt = 0;
 int8_t slideDir = 0;          // -1 / +1 = content slides in from the left / right
 float navX = 0;               // animated tab indicator position
 float setupScroll = 0, setupScrollTarget = 0;
-float toggleAnim[10] = {0};
+float toggleAnim[16] = {0};
 uint32_t lastNow = 0;
 float dt = 0;
 
@@ -556,7 +556,7 @@ void drawBadges(gfx::Surface& s, const UiModel& m) {
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 10;
+const int kRows = 11;
 const int16_t kRowH = 38;
 
 struct RowInfo { const char* label; const char* sub; };
@@ -568,6 +568,7 @@ const RowInfo kRowInfo[kRows] = {
     {"Goblin beacon", "let other Scouts find me"},
     {"GPS", "streaks and exploration"},
     {"Invert colours", "if the screen looks negative"},
+    {"Turbo display", "faster screen; off if it glitches"},
     {"Sprite pack", "from the SD card"},
     {"Touch test", "check calibration"},
     {"About", nullptr},
@@ -581,6 +582,7 @@ bool rowToggle(const Settings& st, int i, bool& v) {
     case 4: v = st.beacon; return true;
     case 5: v = st.gps; return true;
     case 6: v = st.invert; return true;
+    case 7: v = st.fastDisplay; return true;
     default: return false;
   }
 }
@@ -596,7 +598,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     if (y > kBodyY + kBodyH || y + kRowH < kBodyY) continue;
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
-    if (i == 9) {
+    if (i == 10) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
@@ -614,10 +616,10 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       s.text(fBody(), W - 150, y + 7, "-", kCyan);
       bar(s, W - 136, y + 14, 96, 6, st.brightness / 100.0f, kCyan);
       s.text(fBody(), W - 32, y + 7, "+", kCyan);
-    } else if (i == 7) {
+    } else if (i == 8) {
       s.textRight(fSmall(), W - 34, y + 9, m.packName, kCyan);
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
-    } else if (i == 8) {
+    } else if (i == 9) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
     }
   }
@@ -864,6 +866,7 @@ void toggleSetting(int row, const UiModel& m) {
     case 4: st.beacon = !st.beacon; if (hooks.beacon) hooks.beacon(st.beacon); break;
     case 5: st.gps = !st.gps; if (hooks.gps) hooks.gps(st.gps); break;
     case 6: st.invert = !st.invert; if (hooks.invert) hooks.invert(st.invert); break;
+    case 7: st.fastDisplay = !st.fastDisplay; if (hooks.fastDisplay) hooks.fastDisplay(st.fastDisplay); break;
     default: return;
   }
   if (hooks.settingsChanged) hooks.settingsChanged();
@@ -913,7 +916,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         st.brightness = (uint8_t)(b < 10 ? 10 : (b > 100 ? 100 : b));
         if (hooks.brightness) hooks.brightness(st.brightness);
         if (hooks.settingsChanged) hooks.settingsChanged();
-      } else if (row == 7) {
+      } else if (row == 8) {
         if (hooks.nextPack && !hooks.nextPack()) {
           Banner& b = banners[bannerCount < 4 ? bannerCount++ : 3];
           strcpy(b.text, "No sprite packs on SD");
@@ -921,7 +924,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
           b.color = kRed;
           if (bannerCount == 1) bannerStart = now;
         }
-      } else if (row == 8) {
+      } else if (row == 9) {
         tapX = tapY = -1;
         screen = Screen::TouchTest;
       } else {

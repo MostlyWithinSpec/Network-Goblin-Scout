@@ -13,6 +13,7 @@ struct Hooks {
   void (*brightness)(uint8_t pct) = nullptr;
   void (*sound)(bool on) = nullptr;
   void (*invert)(bool on) = nullptr;
+  void (*fastDisplay)(bool on) = nullptr;
   void (*beacon)(bool on) = nullptr;
   void (*gps)(bool on) = nullptr;
   bool (*nextPack)() = nullptr;          // cycle SD sprite packs; false if there are none

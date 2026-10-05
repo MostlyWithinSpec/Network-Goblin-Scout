@@ -105,6 +105,7 @@ ui::Hooks makeHooks() {
   h.brightness = display::setBrightness;
   h.sound = fx::setSound;
   h.invert = display::setInverted;
+  h.fastDisplay = display::setFast;
   h.beacon = onBeacon;
   h.gps = onGps;
   h.nextPack = nextPack;
@@ -203,6 +204,7 @@ void setup() {
   const Settings& st = engine.settings();
   display::setBrightness(st.brightness);
   display::setInverted(st.invert);
+  display::setFast(st.fastDisplay);
   fx::begin();
   fx::setSound(st.sound);
   if (st.gps) gps::begin();

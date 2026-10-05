@@ -406,6 +406,7 @@ void Engine::saveNow() {
   set["gps"] = settings_.gps;
   set["sound"] = settings_.sound;
   set["invert"] = settings_.invert;
+  set["fastDisplay"] = settings_.fastDisplay;
   set["sprites"] = settings_.spritePack;
 
   String out;
@@ -451,6 +452,7 @@ void Engine::loadState() {
     settings_.gps = set["gps"] | true;
     settings_.sound = set["sound"] | true;
     settings_.invert = set["invert"] | false;
+    settings_.fastDisplay = set["fastDisplay"] | true;
     settings_.spritePack = set["sprites"] | "goblin";
   }
 }

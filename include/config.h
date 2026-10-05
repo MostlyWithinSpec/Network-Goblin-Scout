@@ -6,7 +6,10 @@
 #define NG_SPRITE_DIR           "/sprites"
 
 // ---- Display --------------------------------------------------------------
-#define DISPLAY_SPI_HZ          40000000   // drop to 20000000 if you see glitches
+#define DISPLAY_SPI_HZ          40000000   // "Turbo display" off
+// "Turbo display" on: asks for the maximum; the ESP32-C5 Arduino core clocks SPI from the
+// crystal, so this really means "crystal speed" (40 or 48 MHz). Toggle in Setup.
+#define DISPLAY_SPI_HZ_FAST     80000000
 #define DISPLAY_ROTATION        3          // landscape, matches vendor/Bruce config
 #define UI_FRAME_MS             40         // ~25 fps target (a full-screen SPI push takes ~31 ms at 40 MHz)
 

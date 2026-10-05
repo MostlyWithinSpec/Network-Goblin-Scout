@@ -90,6 +90,7 @@ struct Settings {
   bool gps = true;
   bool sound = true;
   bool invert = false;
+  bool fastDisplay = true;      // "Turbo display": SPI at full crystal speed
   String spritePack = "goblin";
 };
 
