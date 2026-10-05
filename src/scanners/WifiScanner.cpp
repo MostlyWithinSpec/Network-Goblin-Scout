@@ -31,7 +31,8 @@ bool WifiScanner::begin() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(false, true);
 #if CONFIG_SOC_WIFI_SUPPORT_5G
-  WiFi.setBandMode(WIFI_BAND_MODE_AUTO);  // scan 2.4 GHz and 5 GHz
+  // Scan 2.4 GHz and 5 GHz. Must run after WiFi.mode() has started the STA interface.
+  if (!WiFi.setBandMode(WIFI_BAND_MODE_AUTO)) log_w("wifi: dual-band mode failed, 2.4 GHz only");
 #endif
   return true;
 }

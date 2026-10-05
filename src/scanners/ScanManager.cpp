@@ -12,8 +12,10 @@ void ScanManager::add(Scanner* s) {
 
 void ScanManager::begin() {
   for (int i = 0; i < count_; i++) {
-    bool ok = scanners_[i]->begin();
-    log_i("scan: %s %s", scanners_[i]->name(), ok ? "ready" : "FAILED");
+    if (scanners_[i]->begin())
+      log_i("scan: %s ready", scanners_[i]->name());
+    else
+      log_e("scan: %s FAILED", scanners_[i]->name());
   }
   state_ = State::Idle;
 }
