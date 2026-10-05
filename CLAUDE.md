@@ -122,13 +122,19 @@ BOOT held during power-on/flashing = download mode (confirmed), hence the 1.5 s 
 Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board (schematic only);
 the environment stat was dropped. GPS and speaker not connected yet.
 
-Untested on hardware (v0.2): 802.15.4 scanner, goblin beacon + encounters (needs two boards or a
-BLE advertiser app sending the same manufacturer data), new GUI frame rate (serial logs
-`ui: N fps, render X ms, screen push Y ms`), Wi-Fi/BLE/802.15.4 coexistence.
+v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
+v0.2.1 adds Turbo display + changed-areas-only flush; awaiting the `ui:` serial timing line.
+
+Untested on hardware: goblin beacon + encounters. Test with one board and a phone: nRF Connect →
+Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
+(a level-12 goblin called "Mock").
 
 Still unknown:
 - **Touch min/max calibration** (`TOUCH_RAW_*`): unverified; vendor TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
-- **SPI speed**: display 40 MHz, SD 20 MHz, touch 2.5 MHz. A full-frame push is ~31 ms at 40 MHz.
+- **SPI speed**: on the C5 the Arduino core clocks SPI from the crystal (40 or 48 MHz, logged at boot), so
+  that is the ceiling; "40 MHz" may really be 24 MHz on a 48 MHz crystal. Turbo display asks for the max.
+  Going past the crystal would need the PLL clock source and per-device divider fixes (SD, touch), or
+  IDF spi_master/esp_lcd with DMA for the whole shared bus. Neither done yet.
 - **Which USB-C port carries serial logs**: native USB (USB-Serial-JTAG) vs CH340 on UART0 (GPIO 11/12).
 
 ## Roadmap
