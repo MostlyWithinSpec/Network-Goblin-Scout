@@ -10,9 +10,20 @@ bool mounted = false;
 namespace storage {
 
 bool begin() {
-  mounted = SD.begin(PIN_SD_CS, SPI, 20000000);
+  // A card left mid-command by a crash or reset (its power isn't cut) can miss the first
+  // init, and some cards dislike 20 MHz: retry a few times, then fall back to 4 MHz.
+  static const uint32_t kHz[] = {20000000, 20000000, 4000000, 4000000};
+  for (uint32_t hz : kHz) {
+    mounted = SD.begin(PIN_SD_CS, SPI, hz);
+    if (mounted) {
+      if (hz != kHz[0]) log_w("storage: SD mounted only at %lu MHz", (unsigned long)(hz / 1000000));
+      break;
+    }
+    SD.end();
+    delay(50);
+  }
   if (!mounted) {
-    log_w("storage: no microSD card (running without persistence)");
+    log_w("storage: no microSD card, or it can't be mounted (running without persistence)");
     return false;
   }
   ensureDir(NG_DATA_DIR);
