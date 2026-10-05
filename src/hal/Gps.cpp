@@ -54,4 +54,8 @@ uint32_t unixTime() {
          parser.time.second();
 }
 
+uint32_t charsReceived() { return parser.charsProcessed(); }
+uint32_t sentencesOk() { return parser.passedChecksum(); }
+uint32_t sentencesFailed() { return parser.failedChecksum(); }
+
 }  // namespace gps

@@ -12,4 +12,8 @@ double lon();
 uint8_t satellites();
 bool timeValid();
 uint32_t unixTime();    // UTC seconds, 0 if unknown
+// Raw receive counters, for the bring-up screen.
+uint32_t charsReceived();
+uint32_t sentencesOk();
+uint32_t sentencesFailed();
 }  // namespace gps
