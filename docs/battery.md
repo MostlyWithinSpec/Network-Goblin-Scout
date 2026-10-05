@@ -55,9 +55,9 @@ P5 pin 1 ──Q1 (AO3401A)──┘
   ⚠️ CN1 is **not** in the Qwiic/STEMMA QT pin order (GND, 3V3, SDA, SCL), so make a cable
   by pin name, not by plugging two "matching" connectors together.
 - The gauge's battery pins go across the LiPo (+ and −).
-- **Firmware plan:** battery % and a charging bolt in the status bar, a sleepy "low battery"
-  goblin mood (the `LowBattery` state already exists), and a few achievements
-  ("Unplugged": an hour on battery).
+- **Firmware (done in v0.4, untested on hardware):** detected automatically at boot. Battery %
+  and a charging bolt in the status bar, a droopy goblin with low-battery quips at 15 % or less,
+  a `BATT` line in diagnostics, and achievements ("Unplugged": an hour on battery).
 
 ## How long will it last?
 

@@ -99,7 +99,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    the main loop drains the queue.
 6. Achievement ids in `ACHIEVEMENTS[]` are saved to SD: append only, never reorder or rename.
    Same for `Radio` enum values, `NG_SAVED_COUNTERS` names, hat ids (`core/Hats.cpp`, also sent in
-   the beacon) and quest types (`core/Quests.h`) — all feed stored data.
+   the beacon), quest types (`core/Quests.h`), `Stats::seasonMask` bits (`hats::seasonBit`) and the
+   beacon's hoard-tier bounds (`social/Sniff.h`, other goblins judge sniff-offs with them).
 7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
    per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
    802.15.4 transmissions.
@@ -109,18 +110,21 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 ```
 include/board.h, config.h, ng_log_level.h
 src/main.cpp         setup + non-blocking loop
-src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20
+src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20,
+                     Battery (optional MAX17048 fuel gauge on CN1)
 src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
                      Ieee802154Frame.h (pure MAC header parser)
-src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format
+src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format,
+                     Sniff.h = hoard tiers + sniff-off verdict (pure)
 src/core/            Engine (sighting -> XP -> achievements -> persistence, needs, quest board, radar blips),
-                     Achievements, Quests, Hats (pure), SeenStore, HashSet64
+                     tracker alert, sniff-offs), Achievements, Quests, Hats, Trackers, Clock.h (pure),
+                     SeenStore, HashSet64
 src/ui/              Pure UI: Ui (screens/overlays/input), Companion (animated logo goblin), Widgets, Theme,
                      Model (per-frame snapshot from main.cpp), gfx/ (renderer), assets/ (generated)
                      HatArt (vector hats). Sprites.cpp is the one device-only file (loads SD packs)
 lib/qrcodegen/       Nayuki QR code generator (MIT, C) for the share card
 src/diag/            Hardware bring-up mode
-test/, tools/        PC unit tests, asset generator, UI preview
+test/, tools/        PC unit tests, asset generator, UI preview (+ AddressSanitizer in CI), rv32 bench
 ```
 
 ## Hardware bring-up mode
@@ -152,9 +156,19 @@ v0.2.1 adds Turbo display + changed-areas-only flush. Owner log (v0.2.1): crysta
 render ~200 ms, push 33 ms, 2-4 fps → render was the bottleneck (soft-float). v0.2.2 rewrote the
 renderer in integer maths (~9x fewer instructions); awaiting the next `ui:` line.
 
-Untested on hardware: goblin beacon + encounters. Test with one board and a phone: nRF Connect →
+v0.3.2 on hardware: boot loop fixed (wrap() stack overflow on the disclaimer, found with ASan),
+saving and name survive re-flashing (owner report). One cheap microSD card stopped mounting after the
+boot loop and stays unmountable on this board; another card works. Second board: needs
+`firmware.factory.bin` at 0x0 on first install (`invalid header` from the ROM otherwise).
+
+Untested on hardware: goblin beacon + encounters + sniff-offs. Test with one board and a phone: nRF Connect →
 Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
-(a level-12 goblin called "Mock").
+(a level-12 goblin called "Mock"; change the `00` before the name to `A0` for a "Huge hoard", tier 5).
+
+v0.4.0 (compiles; untested on hardware): tracker alert, sniff-offs, battery gauge, clock + day/night,
+seasonal hats. Tracker test: an AirTag only sends the "separated" advert we look for once it has been away
+from its owner's iPhone for a while, so leave the iPhone at home and walk the AirTag + Scout through 3+
+places for 15+ min (Tile tags always count, so a Tile owner's own tag will alert: "It's mine").
 
 Still unknown:
 - **Touch min/max calibration** (`TOUCH_RAW_*`): unverified; vendor TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
@@ -174,6 +188,9 @@ line shows whether push or render is the remaining bottleneck.
 Done in v0.3.1: goblin id/name mirrored in state.json (factory flash wipes NVS: 0xFF over 0x9000-0xDFFF),
 state.json.bak recovery, save within 3 s of big events, first-run disclaimer + naming keyboard,
 achievement batching.
-Next: battery support (plan + wiring rules in docs/battery.md: boost to 5 V via Schottky into the 5V
-pad or P5 pin 1, never LiPo on 3V3/5V directly; MAX17048 on CN1) -> sync/leaderboards (docs/sync-plan.md;
-rule 7 will need amending for owner-initiated sync).
+Done in v0.4.0: MAX17048 battery gauge (hardware wiring in docs/battery.md: boost to 5 V via Schottky into
+the 5V pad or P5 pin 1, never LiPo on 3V3/5V directly), tracker alert (core/Trackers, RAM only, salted ids),
+sniff-offs (hoard tier in beacon flags bits 5-7, backwards compatible), wall clock (GPS + UTC offset, or set
+by hand) with day/night background, night naps and 4 seasonal hats (ids 14-17), 12 achievements (122 total;
+the bitset holds 128, widen `Stats::achieved` before adding more than 6).
+Next: sync/leaderboards (docs/sync-plan.md; rule 7 will need amending for owner-initiated sync).

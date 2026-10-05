@@ -34,13 +34,17 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 | 🔵 **Bluetooth snooping** | Passive BLE scans. iBeacons, Eddystone, named gadgets. Phones with rotating addresses count as *sightings*, not trophies (no farming!). |
 | 🕸️ **Mesh eavesdropping** | The C5's third radio listens to 802.15.4: Zigbee bulbs, Thread sensors, Matter hubs. Your smart home is chattier than you think. |
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
-| 🏆 **110 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
+| 👃 **Sniff-offs** | Then they sniff each other's hoards. Bigger hoard wins (level breaks a tie) and *both* goblins get XP. Bragging rights not included, but strongly implied. |
+| 🏷️ **Tracker alert** | Actually useful: if an AirTag, Tile, SmartTag or Google tracker keeps tagging along with you through 3+ places for 15+ minutes, the goblin sounds the alarm. Your own? Tap **It's mine** and it never nags about that one again. |
+| 🏆 **122 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
 | ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks (and babbles, if you wire up a speaker). Mostly about packets. |
 | 🍖 **Needs** | It gets **hungry** (feed it new devices) and **bored** (show it new channels, places, networks and goblins). Keep both meters full and it earns **+25% XP**. Neglect it and it sulks. |
 | 📜 **Quests** | A board of three challenges at a time: *"Sniff out 20 new networks"*, *"Find a Wi-Fi 6 router"*... Clear the board for bonus XP, then a fresh one turns up. |
-| 🎩 **Hats** | 13 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones. Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
+| 🎩 **Hats** | 17 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones, plus seasonal ones (Witch Hat in October, Santa Hat in December...). Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
 | 📡 **Radar** | A live sweep of everything heard in the last minute. Distance = signal strength, colour = radio, other goblins show up as little goblin heads. |
 | 🪪 **Share card** | Hold the goblin (or Setup → Share card) for a trading card with its name, level, hat, stats and a **QR code**. Made for photos. |
+| 🌙 **Day & night** | Dawn glow, dusk glow, a starry night sky, and a goblin that naps from 11 pm (it keeps sniffing in its sleep). Needs the time: GPS, or set the clock in Setup. |
+| 🔋 **Battery-aware** *(optional)* | Add a LiPo and a MAX17048 fuel gauge ([docs/battery.md](docs/battery.md)) for battery % in the status bar and a sleepy goblin when it runs low. |
 | 🗺️ **Exploration** *(GPS optional)* | Plug in a GPS for daily streaks and "areas explored". Coordinates never leave the SD card. |
 | 📴 **Fully offline** | No account, no cloud, no app. The SD card is optional (but without it the goblin forgets everything at bedtime). |
 
@@ -61,6 +65,11 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 <td><img src="docs/img/levelup.png" width="240"><br><sub>Level up. Unbearable now.</sub></td>
 <td><img src="docs/img/new_hat.png" width="240"><br><sub>New hat unlocked.</sub></td>
 <td><img src="docs/img/achievement.png" width="240"><br><sub>Achievement unlocked.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/tracker_alert.png" width="240"><br><sub>Something's following you. The goblin noticed.</sub></td>
+<td><img src="docs/img/sniff_off.png" width="240"><br><sub>Sniff-off! Biggest hoard wins.</sub></td>
+<td><img src="docs/img/home_night.png" width="240"><br><sub>Night shift. Stars out, goblin napping.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/img/stats_spectrum.png" width="240"><br><sub>Every channel it's ever heard.</sub></td>
@@ -115,6 +124,7 @@ ESP32-C5). It's big. Make a sandwich.
 - **BOOT button** = pocket mode: screen off, goblin keeps sniffing. Tap the screen to wake it.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
 - **Setup → Goblin beacon** controls whether other goblins can find *yours* (see privacy below).
+- **Setup → Clock** sets the time (no GPS needed; it's forgotten at power-off). With GPS it sets your time zone instead.
 - **Setup → About** to rename your goblin.
 
 ### Hardware bring-up mode
@@ -137,9 +147,12 @@ The goblin is nosy, not creepy.
   (the salt is random per device). You can count your hoard but you can't read it back.
 - **GPS stays home.** Coordinates are written to the SD card and nowhere else: not the screen, not serial.
 - **No farming.** BLE devices with rotating private addresses (most phones) are *sightings*, not unique devices.
+- **Tracker alert stays local.** Trackers are followed by salted id, in memory, to spot one that keeps
+  following *you*. Nothing is sent anywhere. Works best with AirTags and other Find My tags, Tile and Google
+  tags; trackers that change address often can slip through, so treat silence as "not seen", not "safe".
 - **The one thing it sends** is the goblin beacon: a non-connectable BLE advert with a random goblin id, a
   generated goblin name, its level and colour. It uses a random address made fresh at every boot (never the
-  chip's real Bluetooth MAC). Switch it off in Setup and you can still see other goblins.
+  chip's real Bluetooth MAC). It also carries your hat and a rough hoard size for sniff-offs. Switch it off in Setup and you can still see other goblins.
 
 ## The hoard (what's on the SD card)
 
@@ -153,6 +166,8 @@ The goblin is nosy, not creepy.
 /scout/pans.txt      ids of mesh networks (PAN id + channel)
 /scout/peers.txt     ids of goblins met, their level when you met
 /scout/cells.txt     ids of ~5 km exploration cells visited
+/scout/trackers.txt  ids of item trackers heard, and what kind
+/scout/trackers_ok.txt  trackers you said are yours (no alerts for these)
 /sprites/<pack>/     sprite packs (see below)
 ```
 
@@ -191,8 +206,9 @@ src/social/              the goblin's identity and its "I'm a goblin" beacon
 src/core/                Engine (sighting → XP → achievements → SD), achievements list
 src/ui/                  screens, the animated goblin, widgets; gfx/ = tiny renderer
 src/diag/                hardware bring-up mode
-test/                    PC unit tests (802.15.4 parser, beacon format)
-tools/preview/           renders the real UI on a PC into PNGs
+test/                    PC unit tests (802.15.4 parser, beacon, quests, tracker alert, clock)
+tools/preview/           renders the real UI on a PC into PNGs (CI also runs it under AddressSanitizer)
+tools/bench/             counts instructions per frame on the ESP32-C5's CPU type (emulated)
 tools/gen_assets.py      turns assets/ (logo, fonts) into C++ headers
 sd_card/                 copy to the microSD card
 ```
@@ -216,7 +232,8 @@ sd_card/                 copy to the microSD card
 - [x] Hunger & boredom, quest boards, 13 hats, radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
-- [ ] **Battery.** The board has no charger or battery sense. Wiring plan and parts: [docs/battery.md](docs/battery.md)
+- [x] Tracker alert, sniff-offs, day/night, seasonal hats
+- [x] Battery support in firmware (MAX17048). The hardware side is DIY: [docs/battery.md](docs/battery.md)
 - [ ] Account pairing, summary sync and a website with leaderboards: [docs/sync-plan.md](docs/sync-plan.md)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 

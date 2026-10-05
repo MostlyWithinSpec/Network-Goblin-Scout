@@ -81,3 +81,30 @@ The firmware is open source, so a determined person *can* forge uploads. Aim for
    + Postgres box).
 3. QR pairing and signed uploads.
 4. Encounter cross-checks and plausibility rules.
+
+## 8. Hosting and cost (cheapest workable setup)
+
+Prices as last checked; confirm on the providers' pages before you commit.
+
+| Piece | Suggested | Cost |
+|---|---|---|
+| Domain | a subdomain of a domain you already own (e.g. `scout.networkgoblin.<tld>`), or a new one | $0, or ~$10-15/year |
+| Website + web flasher | Cloudflare Pages (static: profile pages, leaderboards, flasher) | free tier |
+| API (`/sync`, `/pair`, leaderboards) | Cloudflare Workers | free tier: 100k requests/day |
+| Database | Cloudflare D1 (SQLite) | free tier: 5 GB, 100k row writes/day |
+| Accounts / login | GitHub or Discord OAuth (no passwords to store) | free |
+
+**Expected cost: $0/month plus the domain.** Rough sizing: 1,000 goblins syncing 10 times a day is
+10,000 requests and writes a day, well inside the free tiers. Leaderboards can be computed every few
+minutes and cached, so page views barely touch the database. The first upgrade, if it ever
+gets popular, is Workers Paid at about $5/month.
+
+Alternatives: GitHub Pages is free for the static site but has no backend, so the API would still
+need Workers or a small VPS (~$4-6/month, more to look after). Supabase/Firebase free tiers also
+work; Cloudflare keeps everything (site, API, DB, domain, TLS) in one place.
+
+**Web flasher:** [ESP Web Tools](https://esphome.github.io/esp-web-tools/) puts an "Install" button on
+a page. It needs HTTPS (Pages gives you that) and Chrome or Edge (Web Serial), and it uses esptool-js
+under the hood: check that the version you embed supports the ESP32-C5 before relying on it. The
+manifest points at `firmware.factory.bin` at offset 0, which CI already builds; a GitHub Release per
+version is a free place to host the binaries.
