@@ -46,7 +46,8 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 | 🌙 **Day & night** | Dawn glow, dusk glow, a starry night sky, and a goblin that naps from 11 pm (it keeps sniffing in its sleep). Needs the time: GPS, or set the clock in Setup. |
 | 🔋 **Battery-aware** *(optional)* | Add a LiPo and a MAX17048 fuel gauge ([docs/battery.md](docs/battery.md)) for battery % in the status bar and a sleepy goblin when it runs low. |
 | 🗺️ **Exploration** *(GPS optional)* | Plug in a GPS for daily streaks and "areas explored". Coordinates never leave the SD card. |
-| 📴 **Fully offline** | No account, no cloud, no app. The SD card is optional (but without it the goblin forgets everything at bedtime). |
+| 🏆 **Leaderboards** | Press **Sync** (Setup → Sync & leaderboard) and your goblin uploads a summary of its hoard over your Wi-Fi to [the leaderboard](https://scout.networkgoblin.dev/leaderboard/). Counts only. Weekly and all-time boards, and a profile page per goblin. |
+| 📴 **Offline first** | No account, no cloud, no app needed. Syncing is optional and only happens when you press the button. The SD card is optional too (but without it the goblin forgets everything at bedtime). |
 
 ## Screenshots
 
@@ -70,6 +71,11 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 <td><img src="docs/img/tracker_alert.png" width="240"><br><sub>Something's following you. The goblin noticed.</sub></td>
 <td><img src="docs/img/sniff_off.png" width="240"><br><sub>Sniff-off! Biggest hoard wins.</sub></td>
 <td><img src="docs/img/home_night.png" width="240"><br><sub>Night shift. Stars out, goblin napping.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/sync.png" width="240"><br><sub>Goblin Sync: onto the leaderboard.</sub></td>
+<td><img src="docs/img/wifi_pick.png" width="240"><br><sub>Pick your Wi-Fi (once).</sub></td>
+<td><img src="docs/img/keyboard.png" width="240"><br><sub>A real keyboard, symbols and all.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/img/stats_spectrum.png" width="240"><br><sub>Every channel it's ever heard.</sub></td>
@@ -129,6 +135,8 @@ ESP32-C5). It's big. Make a sandwich.
 - **BOOT button** = pocket mode: screen off, goblin keeps sniffing. Tap the screen to wake it.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
 - **Setup → Goblin beacon** controls whether other goblins can find *yours* (see privacy below).
+- **Setup → Sync & leaderboard**: pick your Wi-Fi once, then **Sync now** whenever you want your goblin's
+  numbers on the leaderboard. The QR code on that screen opens your goblin's page.
 - **Setup → Clock** sets the time (no GPS needed; it's forgotten at power-off). With GPS it sets your time zone instead.
 - **Setup → About** to rename your goblin.
 
@@ -155,7 +163,11 @@ The goblin is nosy, not creepy.
 - **Tracker alert stays local.** Trackers are followed by salted id, in memory, to spot one that keeps
   following *you*. Nothing is sent anywhere. Works best with AirTags and other Find My tags, Tile and Google
   tags; trackers that change address often can slip through, so treat silence as "not seen", not "safe".
-- **The one thing it sends** is the goblin beacon: a non-connectable BLE advert with a random goblin id, a
+- **Sync only when you say so.** Goblin Sync joins *your* Wi-Fi only when you press Sync, uploads counts
+  (level, XP, how many networks/devices, trophies, hats), then disconnects. Never names, addresses, ids or
+  locations. Your Wi-Fi password stays on the device. Uploads are signed with a key that never leaves it
+  (except once, over HTTPS, to register), so nobody else can post as your goblin.
+- **The one thing it sends on its own** is the goblin beacon: a non-connectable BLE advert with a random goblin id, a
   generated goblin name, its level and colour. It uses a random address made fresh at every boot (never the
   chip's real Bluetooth MAC). It also carries your hat and a rough hoard size for sniff-offs. Switch it off in Setup and you can still see other goblins.
 
@@ -173,6 +185,7 @@ The goblin is nosy, not creepy.
 /scout/cells.txt     ids of ~5 km exploration cells visited
 /scout/trackers.txt  ids of item trackers heard, and what kind
 /scout/trackers_ok.txt  trackers you said are yours (no alerts for these)
+/scout/sync.key      your goblin's leaderboard key (like salt.bin: don't share it)
 /sprites/<pack>/     sprite packs (see below)
 ```
 
@@ -239,7 +252,8 @@ sd_card/                 copy to the microSD card
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
 - [x] Tracker alert, sniff-offs, day/night, seasonal hats
 - [x] Battery support in firmware (MAX17048). The hardware side is DIY: [docs/battery.md](docs/battery.md)
-- [ ] Account pairing, summary sync and a website with leaderboards: [docs/sync-plan.md](docs/sync-plan.md)
+- [x] Goblin Sync and [leaderboards](https://scout.networkgoblin.dev/leaderboard/)
+- [ ] Account pairing, encounter cross-checks: [docs/sync-plan.md](docs/sync-plan.md)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits

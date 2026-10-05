@@ -91,6 +91,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 
 1. **Never store raw MACs or SSIDs** — only salted SHA-256 ids (`Engine::id`). Don't log
    them either. GPS coordinates stay on the SD card (not on screen, serial, or in sync).
+   One exception: the Wi-Fi network the *owner picks* for Goblin Sync (SSID + password) is kept in
+   NVS. The picker's list of nearby names (`WifiScanner::recent`) lives in RAM only.
 2. **BLE rotating private addresses count as sightings, not unique devices.**
 3. **Works fully offline; SD card optional** — everything must degrade gracefully without it.
 4. **Scanner architecture**: every radio implements `Scanner` (`src/scanners/Scanner.h`)
@@ -101,9 +103,12 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    Same for `Radio` enum values, `NG_SAVED_COUNTERS` names, hat ids (`core/Hats.cpp`, also sent in
    the beacon), quest types (`core/Quests.h`), `Stats::seasonMask` bits (`hats::seasonBit`) and the
    beacon's hoard-tier bounds (`social/Sniff.h`, other goblins judge sniff-offs with them).
-7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
-   per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
-   802.15.4 transmissions.
+7. **Scanning stays passive.** The only automatic transmission is the goblin beacon (`src/social/`):
+   non-connectable BLE advert, random per-boot address, no user data, user-toggleable. The only other
+   traffic is **Goblin Sync, started by the owner** (Setup > Sync): pause scans, join the owner's
+   network, one HTTPS POST of counts (`social/Sync.cpp`, server in the network-goblin-labs repo `api/`),
+   disconnect, resume. Never add background syncing, probe-request scans, active BLE scans or
+   802.15.4 transmissions. Sync uploads counts only: never SSIDs, MACs, salted ids, coordinates.
 
 ## Layout
 
@@ -115,6 +120,7 @@ src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps,
 src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
                      Ieee802154Frame.h (pure MAC header parser)
 src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format,
+                     Sync (Goblin Sync: owner-started upload to the leaderboard, HMAC-signed),
                      Sniff.h = hoard tiers + sniff-off verdict (pure)
 src/core/            Engine (sighting -> XP -> achievements -> persistence, needs, quest board, radar blips),
                      tracker alert, sniff-offs), Achievements, Quests, Hats, Trackers, Clock.h (pure),
@@ -199,4 +205,9 @@ by hand) with day/night background, night naps and 4 seasonal hats (ids 14-17), 
 the bitset holds 128, widen `Stats::achieved` before adding more than 6).
 v0.4.1: BQ27441 fuel gauge (SparkFun Battery Babysitter, needs a separate 5 V boost) alongside the
 MAX17048; capacity from `BATTERY_CAPACITY_MAH`. Owner reports all v0.4.0 features working on hardware.
-Next: sync/leaderboards (docs/sync-plan.md; rule 7 will need amending for owner-initiated sync).
+v0.5.0 (compiles; untested on hardware): Goblin Sync. Setup > Sync & leaderboard: pick Wi-Fi (RAM list of
+nearby names or type it; keyboard has a symbols layer), Sync now -> scans pause, upload task joins Wi-Fi and
+POSTs to `NG_SYNC_URL` over HTTPS (ESP-IDF CA bundle), HMAC-SHA256 with a device secret (NVS + /scout/sync.key),
+monotonic seq. Server: network-goblin-labs `api/` (Worker + D1, smoke-tested locally with wrangler).
+Leaderboard: scout.networkgoblin.dev/leaderboard. `first_sync` achievement (123 total).
+Next: account pairing (QR) and encounter cross-checks (docs/sync-plan.md).

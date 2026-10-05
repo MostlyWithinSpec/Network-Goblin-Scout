@@ -71,9 +71,37 @@ bool WifiScanner::poll(void (*sink)(const Sighting&), uint32_t& seen) {
       if (rec->phy_11ax) s.flags |= sflag::kWifi6;
       if (rec->wps) s.flags |= sflag::kWps;
     }
+    if (s.name[0]) remember(s.name, s.rssi, s.auth == AuthCat::Open);
     sink(s);
     seen++;
   }
   WiFi.scanDelete();
   return true;
+}
+
+void WifiScanner::remember(const char* ssid, int8_t rssi, bool open) {
+  uint32_t now = millis();
+  WifiChoice* slot = &recent_[0];
+  for (auto& r : recent_) {
+    if (r.seenMs && strcmp(r.ssid, ssid) == 0) { slot = &r; break; }
+    if (r.seenMs < slot->seenMs) slot = &r;  // else replace the stalest
+  }
+  if (strcmp(slot->ssid, ssid) != 0 || now - slot->seenMs > 10000 || rssi > slot->rssi) slot->rssi = rssi;
+  strlcpy(slot->ssid, ssid, sizeof(slot->ssid));
+  slot->open = open;
+  slot->seenMs = now ? now : 1;
+}
+
+size_t WifiScanner::recent(WifiChoice* out, size_t max) const {
+  size_t n = 0;
+  uint32_t now = millis();
+  for (const auto& r : recent_)
+    if (r.seenMs && now - r.seenMs < 120000 && n < max) out[n++] = r;
+  for (size_t i = 1; i < n; i++)  // strongest first
+    for (size_t j = i; j > 0 && out[j].rssi > out[j - 1].rssi; j--) {
+      WifiChoice t = out[j];
+      out[j] = out[j - 1];
+      out[j - 1] = t;
+    }
+  return n;
 }

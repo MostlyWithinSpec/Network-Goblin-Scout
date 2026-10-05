@@ -21,6 +21,10 @@ void ScanManager::begin() {
 }
 
 void ScanManager::startNext() {
+  if (paused_) {
+    state_ = State::Idle;
+    return;
+  }
   for (int tries = 0; tries < count_; tries++) {
     current_ = (current_ + 1) % count_;
     if (scanners_[current_]->enabled()) {

@@ -18,6 +18,7 @@ class Engine {
   // Local wall-clock time if known (localUnix 0 = unknown): night minutes, seasonal hats.
   void setLocalTime(uint32_t localUnix) { localTime_ = localUnix; }
   void trackerIsMine();                              // last tracker alert was the owner's own
+  void synced(uint32_t rank, uint32_t of);           // a leaderboard sync went through
   size_t trackersNearby() const { return watch_.nearby(millis()); }
   uint8_t hoardTier() const;                         // for the beacon (sniff-offs)
 

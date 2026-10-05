@@ -24,6 +24,15 @@ const uint8_t kThread = 0x02;    // looks like Thread (6LoWPAN / MAC security / 
 const uint8_t kBeacon = 0x04;    // MAC beacon frame
 }  // namespace sflag
 
+// A network for the Setup > Sync Wi-Fi picker. RAM only (never saved or logged: design rule 1);
+// only the network the owner picks is kept, in NVS, to sync over.
+struct WifiChoice {
+  char ssid[33];
+  int8_t rssi;
+  bool open;
+  uint32_t seenMs;
+};
+
 // One observation of a transmitter, produced by a scanner module.
 struct Sighting {
   Radio radio;
@@ -55,7 +64,7 @@ struct Sighting {
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
   X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
-  X(nightMin) X(seasonMask)
+  X(nightMin) X(seasonMask) X(syncs)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -106,7 +115,7 @@ struct Settings {
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced
 };
 
 struct UiEvent {

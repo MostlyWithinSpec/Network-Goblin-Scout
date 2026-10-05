@@ -165,6 +165,9 @@ const AchievementDef ACHIEVEMENTS[] = {
     A("insomniac", "Insomniac", "20 hours of night scouting", kSilver, Clock, true, s.nightMin >= 1200),
     A("festive", "Festive", "Earn a seasonal hat", kBronze, Star, false, s.seasonMask != 0),
     A("four_seasons", "Four Seasons", "Earn all four seasonal hats", kGold, Star, false, s.seasonMask == 15),
+
+    // ---- v0.5: Goblin Sync (id 122) ------------------------------------------------
+    A("first_sync", "Online Goblin", "Sync your goblin to the leaderboard", kBronze, Trophy, false, s.syncs >= 1),
 };
 
 #undef A

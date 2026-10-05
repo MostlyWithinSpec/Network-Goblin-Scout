@@ -10,6 +10,10 @@ class ScanManager {
   void tick();
   const char* activeName() const;
   bool busy() const { return state_ == State::Running; }
+  // Sync borrows the Wi-Fi radio: pause() lets the current scan finish, then stops starting new
+  // ones; idle() is true once nothing is running.
+  void pause(bool p) { paused_ = p; }
+  bool idle() const { return paused_ && state_ != State::Running; }
 
  private:
   enum class State { Idle, Running, Resting };
@@ -19,5 +23,6 @@ class ScanManager {
   int current_ = -1;
   State state_ = State::Idle;
   uint32_t restUntil_ = 0;
+  bool paused_ = false;
   void startNext();
 };

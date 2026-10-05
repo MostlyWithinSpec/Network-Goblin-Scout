@@ -1,12 +1,15 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.4.1"
+#define NG_FW_VERSION           "0.5.0"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
 // Where the share card's QR code points. Change it to whatever you want people to find.
-#define NG_SHARE_URL            "https://github.com/MostlyWithinSpec/Network-Goblin-Scout"
+#define NG_SYNC_SITE            "https://scout.networkgoblin.dev"
+#define NG_SHARE_URL            NG_SYNC_SITE                 // share card QR code
+#define NG_SYNC_URL             NG_SYNC_SITE "/api/v1/sync"  // Goblin Sync upload (network-goblin-labs api/)
+#define SYNC_WIFI_TIMEOUT_MS    20000
 
 // ---- Display --------------------------------------------------------------
 #define DISPLAY_SPI_HZ          40000000   // "Turbo display" off

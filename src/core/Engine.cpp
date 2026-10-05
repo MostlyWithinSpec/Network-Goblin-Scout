@@ -317,6 +317,16 @@ void Engine::watchTracker(uint64_t tid, const Sighting& s) {
   checkAchievements();
 }
 
+void Engine::synced(uint32_t rank, uint32_t of) {
+  stats_.syncs++;
+  char t[40];
+  snprintf(t, sizeof(t), "Synced! #%lu of %lu", (unsigned long)rank, (unsigned long)of);
+  push(EventType::Synced, rank, t);
+  checkAchievements();
+  saveSoon_ = true;
+  dirty_ = true;
+}
+
 void Engine::trackerIsMine() {
   if (!lastAlertId_) return;
   trackersOk_.add(lastAlertId_, "mine");

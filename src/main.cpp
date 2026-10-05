@@ -21,6 +21,7 @@
 #include "scanners/ThreadScanner.h"
 #include "scanners/WifiScanner.h"
 #include "social/Peer.h"
+#include "social/Sync.h"
 #include "ui/Sprites.h"
 #include "ui/Ui.h"
 
@@ -182,6 +183,8 @@ ui::Hooks makeHooks() {
   };
   h.trackerMine = [] { engine.trackerIsMine(); };
   h.setClock = onSetClock;
+  h.setWifi = goblinsync::setWifi;
+  h.syncNow = goblinsync::start;
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -227,6 +230,18 @@ void fillModel(uint32_t now) {
   model.localTime = localNow();
   model.clockGps = gpsClock();
   model.buildTime = buildTime();
+  const goblinsync::Status& ss = goblinsync::status();
+  model.sync = goblinsync::busy() ? UiModel::Sync::Busy
+               : ss.state == goblinsync::State::Done ? UiModel::Sync::Done
+               : ss.state == goblinsync::State::Failed ? UiModel::Sync::Failed
+                                                  : UiModel::Sync::Idle;
+  model.syncSsid = goblinsync::ssid();
+  model.syncMsg = ss.msg;
+  model.syncMotd = ss.motd;
+  model.syncProfile = goblinsync::profileUrl();
+  static WifiChoice nets[6];
+  model.nets = nets;
+  model.netCount = wifiScanner.recent(nets, 6);
 }
 
 void handleEvents(uint32_t now) {
@@ -303,6 +318,7 @@ void setup() {
     st.agreed = agreed;
     engine.settingsChanged();
   }
+  goblinsync::begin();  // leaderboard identity + saved Wi-Fi (NVS, mirrored on SD)
 
   display::setBrightness(st.brightness);
   display::setInverted(st.invert);
@@ -355,6 +371,7 @@ void loop() {
   battery::poll();
   engine.setOnBattery(battery::discharging());
   scans.tick();
+  goblinsync::tick(scans);
 
   if (now - lastGeoMs > 1000) {
     lastGeoMs = now;

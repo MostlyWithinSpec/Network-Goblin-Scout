@@ -30,7 +30,7 @@ const float kPi = 3.14159265f;
 // ---------------------------------------------------------------------------
 // State
 // The first five are the tabs, in tab order.
-enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming, Clock };
+enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming, Clock, Sync, WifiPick };
 const int kTabCount = 5;
 void goTo(Screen sc, uint32_t now);
 
@@ -358,7 +358,8 @@ void drawNav(gfx::Surface& s) {
   int16_t y = H - kNavH;
   s.fillRect(0, y, W, kNavH, kBgBottom, 220);
   s.hline(0, y, W, kEdge);
-  int active = screen == Screen::TouchTest || screen == Screen::Share || screen == Screen::Clock ? 4 : (int)screen;
+  int active = screen == Screen::TouchTest || screen == Screen::Share || screen == Screen::Clock || screen == Screen::Sync ||
+                       screen == Screen::WifiPick ? 4 : (int)screen;
   float target = active * (float)kTabW;
   navX += (target - navX) * clampf(dt * 14, 0, 1);
   s.fillRoundRect((int16_t)navX + 3, y + 4, kTabW - 6, kNavH - 8, 8, kCyan, 35);
@@ -828,12 +829,27 @@ uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
 bool qrOk = false;
 char qrFor[96] = "";
 
-void drawShare(gfx::Surface& s, const UiModel& m) {
-  if (strcmp(qrFor, m.shareUrl) != 0) {  // encode once per URL
+// QR code for `url` in a white box of about `box` px at (x, y), quiet zone included. Encodes
+// only when the URL changes. Returns the box size actually drawn (0 if it didn't fit).
+int16_t drawQr(gfx::Surface& s, const char* url, int16_t x, int16_t y, int16_t box) {
+  if (strcmp(qrFor, url) != 0) {
     uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
-    snprintf(qrFor, sizeof(qrFor), "%s", m.shareUrl);
+    snprintf(qrFor, sizeof(qrFor), "%s", url);
     qrOk = qrcodegen_encodeText(qrFor, tmp, qr, qrcodegen_Ecc_MEDIUM, 1, 8, qrcodegen_Mask_AUTO, true);
   }
+  if (!qrOk) return 0;
+  int n = qrcodegen_getSize(qr);
+  int mod = box / (n + 2);
+  if (mod < 1) mod = 1;
+  int16_t size = (int16_t)((n + 2) * mod);
+  s.fillRect(x, y, size, size, 0xFFFF);
+  for (int yy = 0; yy < n; yy++)
+    for (int xx = 0; xx < n; xx++)
+      if (qrcodegen_getModule(qr, xx, yy)) s.fillRect(x + (xx + 1) * mod, y + (yy + 1) * mod, mod, mod, 0x0000);
+  return size;
+}
+
+void drawShare(gfx::Surface& s, const UiModel& m) {
   const Stats& st = *m.stats;
   // card
   s.fillRoundRect(6, kBodyY + 4, W - 12, kBodyH - 8, 10, gfx::hex(0x0A1C22), 245);
@@ -862,25 +878,17 @@ void drawShare(gfx::Surface& s, const UiModel& m) {
   }
   snprintf(b, sizeof(b), "%u / %u trophies", (unsigned)st.achieved.count(), (unsigned)ACHIEVEMENT_COUNT);
   s.text(fSmall(), 121, kBodyY + 128, b, kGoldC);
-  // QR code (white quiet zone so phones can read it)
-  if (qrOk) {
-    int n = qrcodegen_getSize(qr);
-    int mod = 84 / (n + 2);
-    if (mod < 1) mod = 1;
-    int16_t size = (int16_t)((n + 2) * mod);
-    int16_t qx = W - 16 - size, qy = kBodyY + 52;
-    s.fillRect(qx, qy, size, size, 0xFFFF);
-    for (int yy = 0; yy < n; yy++)
-      for (int xx = 0; xx < n; xx++)
-        if (qrcodegen_getModule(qr, xx, yy)) s.fillRect(qx + (xx + 1) * mod, qy + (yy + 1) * mod, mod, mod, 0x0000);
-    s.textCentered(fSmall(), qx + size / 2, qy + size + 3, "scan me", kDim);
-  }
+  // QR code (white quiet zone so phones can read it): the goblin's leaderboard page once it has
+  // synced, else the project site
+  const char* url = m.syncProfile[0] && m.stats->syncs ? m.syncProfile : m.shareUrl;
+  int16_t qx = W - 16 - 84, qy = kBodyY + 52;
+  if (int16_t size = drawQr(s, url, qx, qy, 84)) s.textCentered(fSmall(), qx + size / 2, qy + size + 3, "scan me", kDim);
   s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 26, "NETWORK GOBLIN SCOUT  -  tap to close", kFaint);
 }
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 13;
+const int kRows = 14;
 const int16_t kRowH = 38;
 
 struct RowInfo { const char* label; const char* sub; };
@@ -896,6 +904,7 @@ const RowInfo kRowInfo[kRows] = {
     {"Sprite pack", "from the SD card"},
     {"Touch test", "check calibration"},
     {"Share card", "show off your goblin"},
+    {"Sync & leaderboard", nullptr},
     {"Clock", nullptr},
     {"About", nullptr},
 };
@@ -927,6 +936,15 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     if (i == 11) {
       s.text(fBody(), 16, y + 1, r.label, kText);
       char b[48];
+      if (m.syncSsid[0]) snprintf(b, sizeof(b), "via %s", m.syncSsid);
+      else snprintf(b, sizeof(b), "upload your hoard to the boards");
+      s.text(fSmall(), 16, y + 17, b, kDim);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+      continue;
+    }
+    if (i == 12) {
+      s.text(fBody(), 16, y + 1, r.label, kText);
+      char b[48];
       if (m.localTime) {
         clk::Civil c = clk::fromUnix(m.localTime);
         if (m.clockGps)
@@ -941,7 +959,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
       continue;
     }
-    if (i == 12) {
+    if (i == 13) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
@@ -1418,90 +1436,150 @@ void drawParticles(gfx::Surface& s) {
 
 
 // ---------------------------------------------------------------------------
-// First run: disclaimer and naming
+// First run: disclaimer and naming. The same keyboard also types the Wi-Fi network name and
+// password for Goblin Sync (with a numbers/symbols layer and a cancel button).
 bool needName = false;
 Screen afterNaming = Screen::Home;
-char nameBuf[peercodec::kMaxName + 1] = "";
+enum class Kb : uint8_t { Name, Ssid, Pass };
+Kb kbMode = Kb::Name;
+char nameBuf[64] = "";          // what's being typed (goblin name, SSID or password)
+char pendingSsid[33] = "";      // Wi-Fi network chosen before typing its password
 bool caps = true;
+uint8_t kbLayer = 0;            // 0 letters, 1 numbers/symbols, 2 more symbols
 int lastKey = -1;
 uint32_t lastKeyAt = 0;
+uint32_t kbWarnUntil = 0;       // "8+ characters" hint on DONE
 
-const char* const kKeyRows[3] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
-enum Special { kShift = 100, kDel, kDice, kSpace, kOk };
+const char* const kKeyRows[3][3] = {
+    {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
+    {"1234567890", "-/:;()$&@", ".,?!'\"_"},
+    {"[]{}#%^*+=", "\\|~<>`-/:", ".,?!'\"_"},
+};
+enum Special { kShift = 1000, kDel, kDice, kSpace, kOk, kCancel };
+
+size_t kbMax() { return kbMode == Kb::Name ? peercodec::kMaxName : kbMode == Kb::Ssid ? 32 : 63; }
+bool kbCancellable() { return kbMode != Kb::Name || afterNaming != Screen::Home; }
 
 struct KeyRect { int16_t x, y, w, h; int code; };
 int keys(KeyRect* out) {  // all keys, returns count
   int n = 0;
-  for (int i = 0; i < 10; i++) out[n++] = {(int16_t)(6 + i * 31), 78, 29, 34, kKeyRows[0][i]};
-  for (int i = 0; i < 9; i++) out[n++] = {(int16_t)(21 + i * 31), 116, 29, 34, kKeyRows[1][i]};
+  const char* const* rows = kKeyRows[kbLayer];
+  for (int i = 0; i < 10; i++) out[n++] = {(int16_t)(6 + i * 31), 78, 29, 34, (uint8_t)rows[0][i]};
+  for (int i = 0; i < 9; i++) out[n++] = {(int16_t)(21 + i * 31), 116, 29, 34, (uint8_t)rows[1][i]};
   out[n++] = {6, 154, 44, 34, kShift};
-  for (int i = 0; i < 7; i++) out[n++] = {(int16_t)(54 + i * 31), 154, 29, 34, kKeyRows[2][i]};
+  for (int i = 0; i < 7; i++) out[n++] = {(int16_t)(54 + i * 31), 154, 29, 34, (uint8_t)rows[2][i]};
   out[n++] = {271, 154, 43, 34, kDel};
   out[n++] = {6, 194, 74, 38, kDice};
   out[n++] = {84, 194, 140, 38, kSpace};
   out[n++] = {228, 194, 86, 38, kOk};
+  if (kbCancellable()) out[n++] = {0, 0, 40, 28, kCancel};
   return n;
 }
 
 void drawNaming(gfx::Surface& s, const UiModel& m) {
-  s.textCentered(fTitle(), W / 2, 8, afterNaming == Screen::Setup ? "RENAME YOUR GOBLIN" : "NAME YOUR GOBLIN", kCyan);
+  char title[48];
+  if (kbMode == Kb::Ssid) snprintf(title, sizeof(title), "WI-FI NETWORK NAME");
+  else if (kbMode == Kb::Pass) snprintf(title, sizeof(title), "PASSWORD");
+  else snprintf(title, sizeof(title), "%s", afterNaming == Screen::Setup ? "RENAME YOUR GOBLIN" : "NAME YOUR GOBLIN");
+  s.textCentered(fTitle(), W / 2, 8, title, kCyan);
+  if (kbCancellable()) s.textCentered(fBody(), 16, 3, "x", kDim);
   panel(s, 8, 28, W - 16, 42, kCyan);
-  Companion::Look look;
-  look.scale = 0.55f;
-  look.aura = false;
-  look.hat = m.settings->hat;
-  Companion::drawSmall(s, 30, 70, m.now, look);
+  int16_t tx = 22;
+  if (kbMode == Kb::Name) {
+    Companion::Look look;
+    look.scale = 0.55f;
+    look.aura = false;
+    look.hat = m.settings->hat;
+    Companion::drawSmall(s, 30, 70, m.now, look);
+    tx = W / 2 + 10;
+  }
+  const gfx::Font& f = kbMode == Kb::Name ? fBig() : fBody();
   if (nameBuf[0]) {
-    int16_t end = s.textCentered(fBig(), W / 2 + 10, 36, nameBuf, kGreen);
+    // show the end of long text (passwords): drop characters from the front until it fits
+    const char* shown = nameBuf;
+    while (*shown && Surface::textWidth(f, shown) > W - 84) shown++;
+    int16_t end = kbMode == Kb::Name ? s.textCentered(f, tx, 36, shown, kGreen) : s.text(f, tx, 40, shown, kGreen);
     if ((m.now / 450) % 2) s.fillRect(end + 2, 38, 2, 24, kGreen);
   } else {
-    s.textCentered(fBody(), W / 2 + 10, 40, "type a name, or roll the dice", kFaint);
+    const char* hint = kbMode == Kb::Name ? "type a name, or roll the dice"
+                       : kbMode == Kb::Ssid ? "type the network name"
+                                            : "empty = open network";
+    if (kbMode == Kb::Name) s.textCentered(fBody(), tx, 40, hint, kFaint);
+    else s.text(fBody(), tx, 40, hint, kFaint);
   }
   char cnt[8];
-  snprintf(cnt, sizeof(cnt), "%u/%u", (unsigned)strlen(nameBuf), (unsigned)peercodec::kMaxName);
+  snprintf(cnt, sizeof(cnt), "%u/%u", (unsigned)strlen(nameBuf), (unsigned)kbMax());
   s.textRight(fSmall(), W - 14, 52, cnt, kDim);
+  if (kbMode == Kb::Pass && pendingSsid[0]) s.textRight(fSmall(), W - 14, 30, pendingSsid, kDim);
+  if ((int32_t)(kbWarnUntil - m.now) > 0) s.textRight(fSmall(), W - 14, 30, "8+ characters (or empty)", kRed);
 
-  KeyRect k[32];
+  KeyRect k[34];
   int n = keys(k);
+  bool canFinish = nameBuf[0] || kbMode == Kb::Pass;
   for (int i = 0; i < n; i++) {
+    if (k[i].code == kCancel) continue;
     bool hot = k[i].code == lastKey && m.now - lastKeyAt < 150;
     bool ok = k[i].code == kOk;
-    bool enabled = !ok || nameBuf[0];
-    uint16_t edge = ok ? (enabled ? kGreen : kFaint) : (k[i].code == kShift && caps ? kCyan : kEdge);
+    bool enabled = !ok || canFinish;
+    uint16_t edge = ok ? (enabled ? kGreen : kFaint) : (k[i].code == kShift && caps && !kbLayer ? kCyan : kEdge);
     s.fillRoundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, hot ? kCyan : (ok && enabled ? gfx::dim(kGreen, 70) : kPanel), 235);
     s.roundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, edge);
     int16_t cx = k[i].x + k[i].w / 2, ty = k[i].y + (k[i].h - 20) / 2;
     uint16_t tc = hot ? kBgBottom : kText;
     switch (k[i].code) {
-      case kShift: s.textCentered(fBody(), cx, ty, caps ? "AB" : "ab", caps ? kCyan : kDim); break;
+      case kShift:
+        if (kbLayer) s.textCentered(fBody(), cx, ty, kbLayer == 1 ? "#+=" : "123", kDim);
+        else s.textCentered(fBody(), cx, ty, caps ? "AB" : "ab", caps ? kCyan : kDim);
+        break;
       case kDel: s.textCentered(fBody(), cx, ty, "DEL", tc); break;
-      case kDice: s.textCentered(fBody(), cx, ty, "random", tc); break;
+      case kDice:
+        s.textCentered(fBody(), cx, ty, kbMode == Kb::Name ? "random" : kbLayer ? "ABC" : "123", tc);
+        break;
       case kSpace: s.textCentered(fBody(), cx, ty, "space", kDim); break;
-      case kOk: s.textCentered(fBody(), cx, ty, "DONE", enabled ? kGreen : kFaint); break;
+      case kOk: s.textCentered(fBody(), cx, ty, kbMode == Kb::Ssid ? "NEXT" : "DONE", enabled ? kGreen : kFaint); break;
       default: {
-        char c[2] = {(char)(caps ? k[i].code : k[i].code + 32), 0};
+        char c[2] = {(char)(kbLayer || caps || k[i].code < 'A' ? k[i].code : k[i].code + 32), 0};
         s.textCentered(fBody(), cx, ty, c, tc);
       }
     }
   }
 }
 
+void startKeyboard(Kb mode, Screen returnTo, const char* current);
+
 void finishNaming(uint32_t now) {
   size_t len = strlen(nameBuf);
+  if (kbMode == Kb::Pass) {  // passwords keep their spaces; WPA needs 8-63 characters, open = empty
+    if (len && len < 8) {
+      kbWarnUntil = now + 2500;
+      return;
+    }
+    if (hooks.setWifi) hooks.setWifi(pendingSsid, nameBuf);
+    memset(nameBuf, 0, sizeof(nameBuf));  // don't leave the password lying around in RAM
+    sfx(kSfxQuest);
+    screen = afterNaming;
+    screenChangedAt = now;
+    return;
+  }
   while (len && nameBuf[len - 1] == ' ') nameBuf[--len] = 0;  // trim
   if (!len) return;
+  if (kbMode == Kb::Ssid) {
+    snprintf(pendingSsid, sizeof(pendingSsid), "%.32s", nameBuf);  // kbMax() is 32 for SSIDs
+    startKeyboard(Kb::Pass, afterNaming, "");
+    return;
+  }
   if (hooks.named) hooks.named(nameBuf);
   sfx(kSfxQuest);
   screen = afterNaming;
   screenChangedAt = now;
   companion.react(CState::Excited, 2000, now);
   static char hello[40];
-  snprintf(hello, sizeof(hello), "I'm %s!", nameBuf);
+  snprintf(hello, sizeof(hello), "I'm %.12s!", nameBuf);  // names are 12 characters max
   say(hello, now + 300, 3500);
 }
 
 void tapNaming(int16_t x, int16_t y, uint32_t now) {
-  KeyRect k[32];
+  KeyRect k[34];
   int n = keys(k);
   for (int i = 0; i < n; i++) {
     if (x < k[i].x || x >= k[i].x + k[i].w || y < k[i].y || y >= k[i].y + k[i].h) continue;
@@ -1510,34 +1588,162 @@ void tapNaming(int16_t x, int16_t y, uint32_t now) {
     lastKeyAt = now;
     sfx(kSfxTap);
     size_t len = strlen(nameBuf);
+    bool text = kbMode != Kb::Name;
     switch (code) {
-      case kShift: caps = !caps; break;
-      case kDel: if (len) nameBuf[len - 1] = 0; caps = len <= 1; break;
-      case kDice: {
-        char gen[peercodec::kMaxName + 1];
-        peercodec::nameFor(rnd(), gen, sizeof(gen));
-        snprintf(nameBuf, sizeof(nameBuf), "%s", gen);
-        caps = false;
+      case kCancel:
+        memset(nameBuf, 0, sizeof(nameBuf));
+        screen = afterNaming;
+        screenChangedAt = now;
         break;
-      }
-      case kSpace: if (len && len < peercodec::kMaxName && nameBuf[len - 1] != ' ') { nameBuf[len] = ' '; nameBuf[len + 1] = 0; caps = true; } break;
+      case kShift:
+        if (kbLayer) kbLayer = kbLayer == 1 ? 2 : 1;
+        else caps = !caps;
+        break;
+      case kDel:
+        if (len) nameBuf[len - 1] = 0;
+        if (!text) caps = len <= 1;
+        break;
+      case kDice:
+        if (text) {
+          kbLayer = kbLayer ? 0 : 1;
+        } else {
+          char gen[peercodec::kMaxName + 1];
+          peercodec::nameFor(rnd(), gen, sizeof(gen));
+          snprintf(nameBuf, sizeof(nameBuf), "%s", gen);
+          caps = false;
+        }
+        break;
+      case kSpace:
+        if (text ? len < kbMax() : (len && len < kbMax() && nameBuf[len - 1] != ' ')) {
+          nameBuf[len] = ' ';
+          nameBuf[len + 1] = 0;
+          if (!text) caps = true;
+        }
+        break;
       case kOk: finishNaming(now); break;
       default:
-        if (len < peercodec::kMaxName) {
-          nameBuf[len] = (char)(caps ? code : code + 32);
+        if (len < kbMax()) {
+          bool letter = !kbLayer && code >= 'A' && code <= 'Z';
+          nameBuf[len] = (char)(letter && !caps ? code + 32 : code);
           nameBuf[len + 1] = 0;
-          caps = false;  // capital first letter, then lowercase
+          if (!text) caps = false;  // names: capital first letter, then lowercase; text: caps stays put
         }
     }
     return;
   }
 }
 
-void startNaming(Screen returnTo, const char* current) {
+void startKeyboard(Kb mode, Screen returnTo, const char* current) {
+  kbMode = mode;
   afterNaming = returnTo;
   snprintf(nameBuf, sizeof(nameBuf), "%s", current ? current : "");
-  caps = !nameBuf[0];
+  caps = mode == Kb::Name ? !nameBuf[0] : false;
+  kbLayer = 0;
+  kbWarnUntil = 0;
   screen = Screen::Naming;
+}
+
+void startNaming(Screen returnTo, const char* current) { startKeyboard(Kb::Name, returnTo, current); }
+
+// ---------------------------------------------------------------------------
+// Goblin Sync: pick a Wi-Fi network, press Sync, see your rank. The QR code opens the goblin's
+// page on the leaderboard site.
+const int16_t kSyncWifiY = kBodyY + 26, kSyncBtnY = kBodyY + 72, kSyncColW = 200;
+const int kPickRows = 5;
+const int16_t kPickY = kBodyY + 26, kPickH = 26;
+
+void signalBars(gfx::Surface& s, int16_t x, int16_t y, int8_t rssi, uint16_t c) {
+  int bars = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1;
+  for (int i = 0; i < 4; i++) s.fillRect(x + i * 4, y + 9 - i * 3, 3, 3 + i * 3, c, i < bars ? 255 : 60);
+}
+
+void drawSync(gfx::Surface& s, const UiModel& m) {
+  header(s, "GOBLIN SYNC", "leaderboard");
+  bool busy = m.sync == UiModel::Sync::Busy;
+  // Wi-Fi network
+  panel(s, 8, kSyncWifiY, kSyncColW, 38);
+  icon(s, Glyph::Wifi, 22, kSyncWifiY + 19, 14, m.syncSsid[0] ? kCyan : kFaint);
+  s.text(fSmall(), 36, kSyncWifiY + 1, "WI-FI", kDim);
+  if (m.syncSsid[0]) s.text(fBody(), 36, kSyncWifiY + 14, m.syncSsid, kText);
+  else s.text(fBody(), 36, kSyncWifiY + 14, "tap to pick", kAmber);
+  icon(s, Glyph::Chevron, kSyncColW - 6, kSyncWifiY + 19, 10, kCyan);
+  // the button
+  bool can = m.syncSsid[0] && !busy;
+  s.fillRoundRect(8, kSyncBtnY, kSyncColW, 40, 20, can ? kGreen : kPanel, can ? 255 : 220);
+  if (!can) s.roundRect(8, kSyncBtnY, kSyncColW, 40, 20, kEdge);
+  if (busy) {
+    for (int i = 0; i < 8; i++) {
+      float a = i * kPi / 4 + m.now / 160.0f;
+      uint8_t al = (uint8_t)(255 * ((i + (m.now / 120)) % 8) / 8);
+      s.fillCircle((int16_t)(30 + 8 * cosf(a)), (int16_t)(kSyncBtnY + 20 + 8 * sinf(a)), 2, kCyan, al);
+    }
+    s.textCentered(fBody(), 8 + kSyncColW / 2 + 10, kSyncBtnY + 9, "SYNCING...", kCyan);
+  } else {
+    s.textCentered(fBody(), 8 + kSyncColW / 2, kSyncBtnY + 9, "SYNC NOW", can ? kBgBottom : kFaint);
+  }
+  // what happened
+  uint16_t mc = m.sync == UiModel::Sync::Done ? kGreen : m.sync == UiModel::Sync::Failed ? kRed : busy ? kCyan : kDim;
+  const char* msg = m.syncMsg[0] ? m.syncMsg : m.syncSsid[0] ? "Ready when you are." : "Pick your Wi-Fi first.";
+  s.text(fSmall(), 10, kBodyY + 118, msg, mc);
+  if (m.syncMotd[0]) {
+    char lines[2][64];
+    int n = wrap(fSmall(), m.syncMotd, kSyncColW, lines, 2);
+    for (int i = 0; i < n; i++) s.text(fSmall(), 10, kBodyY + 136 + i * 15, lines[i], kDim);
+  }
+  // the goblin's page
+  if (m.syncProfile[0]) {
+    int16_t size = drawQr(s, m.syncProfile, 218, kSyncWifiY, 94);
+    if (size) {
+      s.textCentered(fSmall(), 218 + size / 2, kSyncWifiY + size + 3, "your goblin", kDim);
+      s.textCentered(fSmall(), 218 + size / 2, kSyncWifiY + size + 17, "online", kDim);
+    }
+  }
+  s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 16, "counts only: never names, addresses or places", kFaint);
+}
+
+void tapSync(int16_t x, int16_t y, const UiModel& m) {
+  if (x > kSyncColW + 8) return;
+  if (y >= kSyncWifiY && y < kSyncWifiY + 38) {
+    if (m.sync != UiModel::Sync::Busy) goTo(Screen::WifiPick, m.now);
+  } else if (y >= kSyncBtnY && y < kSyncBtnY + 40 && m.syncSsid[0] && m.sync != UiModel::Sync::Busy) {
+    if (hooks.syncNow) hooks.syncNow();
+  }
+}
+
+void drawWifiPick(gfx::Surface& s, const UiModel& m) {
+  header(s, "PICK YOUR WI-FI", "to sync over");
+  int rows = m.netCount < (size_t)kPickRows ? (int)m.netCount : kPickRows;
+  for (int i = 0; i <= rows; i++) {
+    int16_t y = kPickY + i * kPickH;
+    panel(s, 8, y, W - 16, kPickH - 3);
+    if (i == rows) {
+      s.text(fBody(), 18, y + 1, "Other network...", kCyan);
+      s.textRight(fSmall(), W - 18, y + 4, "type its name", kDim);
+      break;
+    }
+    const WifiChoice& w = m.nets[i];
+    s.text(fBody(), 18, y + 1, w.ssid, kText);
+    if (!w.open) icon(s, Glyph::Lock, W - 46, y + 11, 10, kDim);
+    signalBars(s, W - 34, y + 4, w.rssi, kCyan);
+  }
+  if (!rows) s.textCentered(fSmall(), W / 2, kPickY + kPickH + 6, "listening for networks... they appear as scans run", kDim);
+}
+
+void tapWifiPick(int16_t y, const UiModel& m) {
+  int rows = m.netCount < (size_t)kPickRows ? (int)m.netCount : kPickRows;
+  int i = (y - kPickY) / kPickH;
+  if (y < kPickY || i > rows) return;
+  if (i == rows) {
+    startKeyboard(Kb::Ssid, Screen::Sync, "");
+    return;
+  }
+  snprintf(pendingSsid, sizeof(pendingSsid), "%s", m.nets[i].ssid);
+  if (m.nets[i].open) {
+    if (hooks.setWifi) hooks.setWifi(pendingSsid, "");
+    goTo(Screen::Sync, m.now);
+  } else {
+    startKeyboard(Kb::Pass, Screen::Sync, "");
+  }
 }
 
 void drawDisclaimer(gfx::Surface& s, const UiModel& m) {
@@ -1688,8 +1894,10 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         screen = Screen::Share;
         screenChangedAt = now;
       } else if (row == 11) {
-        startClock(m);
+        goTo(Screen::Sync, now);
       } else if (row == 12) {
+        startClock(m);
+      } else if (row == 13) {
         startNaming(Screen::Setup, m.myName);
       } else {
         toggleSetting(row, m);
@@ -1698,6 +1906,8 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
     }
     case Screen::TouchTest: tapX = x; tapY = y; break;
     case Screen::Clock: tapClock(x, y, now); break;
+    case Screen::Sync: tapSync(x, y, m); break;
+    case Screen::WifiPick: tapWifiPick(y, m); break;
     default: break;
   }
 }
@@ -1863,6 +2073,13 @@ void onEvent(const UiEvent& e, uint32_t now) {
       banner(Glyph::Trophy, kCyan);
       break;
     case EventType::HatUnlocked: overlay(OvType::Hat); break;
+    case EventType::Synced:
+      banner(Glyph::Trophy, kGreen);
+      companion.react(CState::Excited, 2000, now);
+      emit(PKind::Confetti, W / 2, 60, 24, 0, 130, 1.8f);
+      say("I'm famous!", now + 400, 3000);
+      sfx(kSfxQuest);
+      break;
     case EventType::SniffOff:
       overlay(OvType::Sniff);
       break;
@@ -1973,6 +2190,8 @@ void render(gfx::Surface& s, const UiModel& m) {
     case Screen::Setup: drawSetup(s, m); break;
     case Screen::TouchTest: drawTouchTest(s, m); break;
     case Screen::Clock: drawClock(s, m); break;
+    case Screen::Sync: drawSync(s, m); break;
+    case Screen::WifiPick: drawWifiPick(s, m); break;
     case Screen::Disclaimer:
     case Screen::Naming: break;  // drawn full-screen above
   }

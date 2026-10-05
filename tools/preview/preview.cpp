@@ -230,6 +230,36 @@ int main() {
   model.localTime = 0;
   ui::debugShow(4, 400); run(600); save("27_setup_clock_row");
   ui::debugShow(9, 0); run(600); save("28_set_clock");
+  // Goblin Sync: not set up, Wi-Fi picker, password keyboard (symbols), syncing, synced
+  static WifiChoice nets[] = {{"GoblinCave", -48, false, 1}, {"Cafe Free WiFi", -63, true, 1},
+                              {"NETGEAR-5G", -71, false, 1}, {"xfinitywifi", -80, true, 1}};
+  model.nets = nets;
+  model.netCount = 4;
+  model.syncProfile = "https://scout.networkgoblin.dev/g/?k=3f9a1c22b07e4d51";
+  ui::debugShow(10, 0); run(600); save("29_sync_new");
+  tap(100, 64);  // Wi-Fi row -> picker
+  run(600); save("30_wifi_pick");
+  tap(100, 50);  // GoblinCave -> password keyboard
+  for (auto k : {std::make_pair(146, 132), {37, 96}, {68, 96}, {99, 96}}) tap(k.first, k.second);  // g o b l? (letters)
+  tap(43, 212);  // 123
+  for (auto k : {std::make_pair(21, 96), {52, 96}, {83, 96}, {84, 170}}) tap(k.first, k.second);  // 1 2 3 !
+  run(300); save("31_keyboard_symbols");
+  for (auto k : {std::make_pair(21, 96), {52, 96}, {83, 96}}) tap(k.first, k.second);
+  tap(270, 212);  // DONE
+  run(400);
+  model.syncSsid = "GoblinCave";
+  model.sync = UiModel::Sync::Busy;
+  model.syncMsg = "Uploading the hoard...";
+  run(800); save("32_syncing");
+  model.sync = UiModel::Sync::Done;
+  model.syncMsg = "Synced! #12 of 340";
+  model.syncMotd = "Rumour has it there's a goblin with 10,000 networks. Is it you?";
+  ui::onEvent(ev(EventType::Synced, 12, "Synced! #12 of 340"), now);
+  run(900); save("33_synced");
+  model.sync = UiModel::Sync::Failed;
+  model.syncMsg = "Wi-Fi refused: wrong password?";
+  model.syncMotd = "";
+  run(3000); save("34_sync_failed");
   printf("rendered\n");
   return 0;
 }

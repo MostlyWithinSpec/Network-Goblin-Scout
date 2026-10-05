@@ -1,8 +1,26 @@
 # Goblin Sync & leaderboards: design plan
 
 Goal: a Pwnagotchi-style website where goblins upload a **fun summary** (level, hoard counts,
-trophies, hats, friends), with public profiles and leaderboards. Nothing here is built yet;
-this is the plan to agree on before writing firmware or server code.
+trophies, hats, friends), with public profiles and leaderboards.
+
+**Status (v0.5.0):** sections 1, 2, 4 and 5 are built (firmware `src/social/Sync.cpp`, server
+`api/` in the network-goblin-labs repo, pages at scout.networkgoblin.dev/leaderboard). Identity
+changed from the plan below: instead of QR pairing to an account, each Scout makes its own secret
+key on first boot (see "Identity as built"). Account pairing (section 3) and the encounter
+cross-check are still to do.
+
+### Identity as built
+
+- The Scout makes a random 32-byte secret (NVS, mirrored to `/scout/sync.key` on the SD card so a
+  factory flash doesn't lose it). Its public **key** is the first 8 bytes of SHA-256(secret).
+- Every upload is signed: `X-Goblin-Sig: HMAC-SHA256(secret, raw body)`. The first upload also
+  carries the secret (`claim`), over HTTPS, so the server can register the key; after that it never
+  leaves the device.
+- The beacon's goblin id is broadcast to anyone nearby, so it is **not** used as an identity: someone
+  could otherwise claim your goblin on the site before you do.
+- A sequence number that only goes up stops replays; one sync per minute per goblin.
+- Implausible numbers (level vs XP curve, impossible ratios, XP per hour) quietly hide the goblin
+  from the boards.
 
 ## 1. Privacy contract (what is and isn't uploaded)
 

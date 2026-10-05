@@ -49,6 +49,16 @@ struct UiModel {
   bool clockGps = false;              // from GPS (else set by hand)
   uint32_t buildTime = 0;             // firmware build time: starting point for setting the clock
 
+  // Goblin Sync (Setup > Sync & leaderboard)
+  enum class Sync : uint8_t { Idle, Busy, Done, Failed };
+  Sync sync = Sync::Idle;
+  const char* syncSsid = "";          // owner's Wi-Fi for syncing, "" = not set
+  const char* syncMsg = "";
+  const char* syncMotd = "";
+  const char* syncProfile = "";       // this goblin's page on the leaderboard site
+  const WifiChoice* nets = nullptr;   // networks heard recently, for the picker (RAM only)
+  size_t netCount = 0;
+
   // share card QR code target
   const char* shareUrl = "";
 
