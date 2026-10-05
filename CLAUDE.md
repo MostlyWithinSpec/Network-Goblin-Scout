@@ -140,6 +140,11 @@ BOOT held during power-on/flashing = download mode (confirmed), hence the 1.5 s 
 Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board (schematic only);
 the environment stat was dropped. GPS and speaker not connected yet.
 
+v0.3.0 on hardware: smooth animations, all features working (owner report). Owner saw progress
+"lost" after flashing: the factory image wipes NVS (goblin id) — fixed in v0.3.1 by mirroring it to SD.
+Power path (from schematic): USB VBUS -D1-> 5V rail -> 2x AMS1117-3.3; P5 pin 1 <-> 5V rail via
+Q1 AO3401A (P-FET, gate to GND = reverse-polarity protection, conducts both ways).
+
 v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
 v0.2.1 adds Turbo display + changed-areas-only flush. Owner log (v0.2.1): crystal 48 MHz,
 render ~200 ms, push 33 ms, 2-4 fps → render was the bottleneck (soft-float). v0.2.2 rewrote the
@@ -164,5 +169,9 @@ Done in v0.3 (compiles; awaiting hardware test): hunger/boredom + happy XP bonus
 (sent in beacon flags bits 0-4), radar screen, share card with QR (`NG_SHARE_URL`), goblin babble.
 Display DMA (IDF spi_master/esp_lcd for the whole shared bus) is deferred until the v0.2.2 `ui:` timing
 line shows whether push or render is the remaining bottleneck.
-Next: battery support (LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C)
--> account pairing and summary sync.
+Done in v0.3.1: goblin id/name mirrored in state.json (factory flash wipes NVS: 0xFF over 0x9000-0xDFFF),
+state.json.bak recovery, save within 3 s of big events, first-run disclaimer + naming keyboard,
+achievement batching.
+Next: battery support (plan + wiring rules in docs/battery.md: boost to 5 V via Schottky into the 5V
+pad or P5 pin 1, never LiPo on 3V3/5V directly; MAX17048 on CN1) -> sync/leaderboards (docs/sync-plan.md;
+rule 7 will need amending for owner-initiated sync).

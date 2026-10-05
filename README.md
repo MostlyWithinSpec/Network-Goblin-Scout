@@ -84,6 +84,14 @@ firmware draws, minus the smudges on your screen.</sub>
      `esptool --chip esp32c5 --port <COM5 or /dev/ttyACM0> write-flash 0x0 firmware.factory.bin`
 3. If it won't connect: hold **BOOT**, tap **RESET**, let go of BOOT, try again.
 4. Copy `sd_card/` onto a FAT32 microSD card and slot it in. The goblin needs somewhere to keep its hoard.
+5. First boot: accept the disclaimer and **name your goblin** on the on-screen keyboard. Scanning starts after that.
+
+### Updating without losing your goblin
+
+Your progress lives on the **SD card** (`/scout/`), so re-flashing doesn't touch it.
+- **Updates:** flash `firmware.bin` at `0x10000` (app only, keeps the chip's settings too).
+- **First install or recovery:** flash `firmware.factory.bin` at `0x0`. This also wipes the chip's
+  internal settings, but the goblin's name and ID are restored from the SD card at the next boot.
 
 ### The proper way (PlatformIO)
 
@@ -107,6 +115,7 @@ ESP32-C5). It's big. Make a sandwich.
 - **BOOT button** = pocket mode: screen off, goblin keeps sniffing. Tap the screen to wake it.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
 - **Setup → Goblin beacon** controls whether other goblins can find *yours* (see privacy below).
+- **Setup → About** to rename your goblin.
 
 ### Hardware bring-up mode
 
@@ -206,9 +215,9 @@ sd_card/                 copy to the microSD card
 - [x] 110 achievements, levels, streaks, exploration
 - [x] Hunger & boredom, quest boards, 13 hats, radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
-- [ ] **Battery.** The board has no charger or battery sense. Plan: LiPo → charger/boost → 5 V on P5 pin 1,
-      plus an I2C fuel gauge (MAX17048-ish) on CN1
-- [ ] Account pairing, summary sync and a website for comparing hoards
+- [x] First-run disclaimer, name your goblin, progress survives re-flashing
+- [ ] **Battery.** The board has no charger or battery sense. Wiring plan and parts: [docs/battery.md](docs/battery.md)
+- [ ] Account pairing, summary sync and a website with leaderboards: [docs/sync-plan.md](docs/sync-plan.md)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits
