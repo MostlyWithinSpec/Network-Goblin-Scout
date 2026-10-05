@@ -256,9 +256,10 @@ void build() {
     if (env.valid)
       add(GOOD, "AHT20 %.1f C  %.1f %%RH  (SDA %d, SCL %d)", env.tempC, env.rh, env.sda, env.scl);
     else
-      add(WARN, "AHT20 found, no reading yet  (SDA %d, SCL %d)", env.sda, env.scl);
+      add(WARN, "AHT20 answers at 0x38, no valid reading yet (SDA %d SCL %d)", env.sda, env.scl);
   } else {
-    add(BAD, "AHT20 not found (tried SDA/SCL %d/%d and %d/%d)", PIN_I2C_SDA, PIN_I2C_SCL, PIN_I2C_SCL,
+    // Nothing at 0x38 on either pin order: the part is most likely not fitted.
+    add(BAD, "AHT20 no reply at 0x38 (tried SDA/SCL %d/%d + %d/%d)", PIN_I2C_SDA, PIN_I2C_SCL, PIN_I2C_SCL,
         PIN_I2C_SDA);
   }
 

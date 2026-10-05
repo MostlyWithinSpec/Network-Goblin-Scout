@@ -36,12 +36,15 @@ bool begin(TwoWire& wire) {
   found = false;
   bus->beginTransmission(kAddr);
   if (bus->endTransmission() != 0) return false;
+  // It answered, so it's present. Some batches don't report the "calibrated" bit
+  // even after init; don't reject them here, the CRC in read() catches bad data.
+  found = true;
   if (!(status() & 0x08)) {  // not calibrated yet: send init
     send3(0xBE, 0x08, 0x00);
     delay(10);
+    if (!(status() & 0x08)) log_w("aht20: calibration bit not set after init");
   }
-  found = (status() & 0x08) != 0;
-  return found;
+  return true;
 }
 
 bool present() { return found; }

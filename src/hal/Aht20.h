@@ -6,7 +6,7 @@
 // Non-blocking: start() a measurement, then call read() >= 80 ms later.
 namespace aht20 {
 const uint8_t kAddr = 0x38;
-bool begin(TwoWire& wire);           // true if the sensor answered and is calibrated
+bool begin(TwoWire& wire);           // true if a sensor answered at 0x38
 bool present();
 bool start();                        // trigger a measurement
 bool read(float& tempC, float& rh);  // false while busy or on CRC error
