@@ -78,6 +78,7 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_ieee802154.cpp -o t154 && ./t154
           g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_peer.cpp -o tpeer && ./tpeer
+          g++ -std=c++17 -Wall -Wextra -Werror -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp src/core/Hats.cpp -o tq && ./tq
 
       - name: Render UI preview
         run: |

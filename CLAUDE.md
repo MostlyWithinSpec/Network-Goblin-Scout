@@ -35,6 +35,8 @@ pio device monitor               # serial log, 115200
 ```sh
 g++ -std=c++17 -Wall -Wextra -I src test/test_ieee802154.cpp -o /tmp/t && /tmp/t   # 802.15.4 parser
 g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/t && /tmp/t         # beacon codec
+g++ -std=c++17 -Wall -Wextra -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp \
+    src/core/Hats.cpp -o /tmp/t && /tmp/t                                           # quests + hats
 sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
 python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
 ```
@@ -94,7 +96,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 5. **BLE callbacks never touch SPI** (display, SD and touch share one bus) — queue only;
    the main loop drains the queue.
 6. Achievement ids in `ACHIEVEMENTS[]` are saved to SD: append only, never reorder or rename.
-   Same for `Radio` enum values and `NG_SAVED_COUNTERS` names (both feed stored data).
+   Same for `Radio` enum values, `NG_SAVED_COUNTERS` names, hat ids (`core/Hats.cpp`, also sent in
+   the beacon) and quest types (`core/Quests.h`) — all feed stored data.
 7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
    per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
    802.15.4 transmissions.
@@ -108,10 +111,12 @@ src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps,
 src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
                      Ieee802154Frame.h (pure MAC header parser)
 src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format
-src/core/            Engine (sighting -> XP -> achievements -> persistence), Achievements, SeenStore, HashSet64
+src/core/            Engine (sighting -> XP -> achievements -> persistence, needs, quest board, radar blips),
+                     Achievements, Quests, Hats (pure), SeenStore, HashSet64
 src/ui/              Pure UI: Ui (screens/overlays/input), Companion (animated logo goblin), Widgets, Theme,
                      Model (per-frame snapshot from main.cpp), gfx/ (renderer), assets/ (generated)
-                     Sprites.cpp is the one device-only file (loads SD packs)
+                     HatArt (vector hats). Sprites.cpp is the one device-only file (loads SD packs)
+lib/qrcodegen/       Nayuki QR code generator (MIT, C) for the share card
 src/diag/            Hardware bring-up mode
 test/, tools/        PC unit tests, asset generator, UI preview
 ```
@@ -155,5 +160,9 @@ Still unknown:
 ## Roadmap
 
 Done in v0.2 (awaiting hardware test): 802.15.4 scanner, goblin encounters, GUI overhaul, 110 achievements.
+Done in v0.3 (compiles; awaiting hardware test): hunger/boredom + happy XP bonus, quest boards, 13 hats
+(sent in beacon flags bits 0-4), radar screen, share card with QR (`NG_SHARE_URL`), goblin babble.
+Display DMA (IDF spi_master/esp_lcd for the whole shared bus) is deferred until the v0.2.2 `ui:` timing
+line shows whether push or render is the remaining bottleneck.
 Next: battery support (LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C)
 -> account pairing and summary sync.

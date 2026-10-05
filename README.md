@@ -35,7 +35,12 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 | 🕸️ **Mesh eavesdropping** | The C5's third radio listens to 802.15.4: Zigbee bulbs, Thread sensors, Matter hubs. Your smart home is chattier than you think. |
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
 | 🏆 **110 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
-| ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks. Mostly about packets. |
+| ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks (and babbles, if you wire up a speaker). Mostly about packets. |
+| 🍖 **Needs** | It gets **hungry** (feed it new devices) and **bored** (show it new channels, places, networks and goblins). Keep both meters full and it earns **+25% XP**. Neglect it and it sulks. |
+| 📜 **Quests** | A board of three challenges at a time: *"Sniff out 20 new networks"*, *"Find a Wi-Fi 6 router"*... Clear the board for bonus XP, then a fresh one turns up. |
+| 🎩 **Hats** | 13 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones. Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
+| 📡 **Radar** | A live sweep of everything heard in the last minute. Distance = signal strength, colour = radio, other goblins show up as little goblin heads. |
+| 🪪 **Share card** | Hold the goblin (or Setup → Share card) for a trading card with its name, level, hat, stats and a **QR code**. Made for photos. |
 | 🗺️ **Exploration** *(GPS optional)* | Plug in a GPS for daily streaks and "areas explored". Coordinates never leave the SD card. |
 | 📴 **Fully offline** | No account, no cloud, no app. The SD card is optional (but without it the goblin forgets everything at bedtime). |
 
@@ -45,16 +50,21 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 <tr>
 <td><img src="docs/img/splash.png" width="240"><br><sub>Boot. The goblin awakens.</sub></td>
 <td><img src="docs/img/home_scanning_banner.png" width="240"><br><sub>"Mine! All mine!"</sub></td>
+<td><img src="docs/img/radar.png" width="240"><br><sub>Radar: everything nearby, live.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/quests.png" width="240"><br><sub>Quest board.</sub></td>
+<td><img src="docs/img/wardrobe.png" width="240"><br><sub>The wardrobe. Crown sold separately (level 20).</sub></td>
+<td><img src="docs/img/share_card.png" width="240"><br><sub>Share card, QR included.</sub></td>
+</tr>
+<tr>
 <td><img src="docs/img/levelup.png" width="240"><br><sub>Level up. Unbearable now.</sub></td>
+<td><img src="docs/img/new_hat.png" width="240"><br><sub>New hat unlocked.</sub></td>
+<td><img src="docs/img/achievement.png" width="240"><br><sub>Achievement unlocked.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/img/stats_spectrum.png" width="240"><br><sub>Every channel it's ever heard.</sub></td>
 <td><img src="docs/img/badges.png" width="240"><br><sub>The trophy shelf.</sub></td>
-<td><img src="docs/img/achievement.png" width="240"><br><sub>Achievement unlocked.</sub></td>
-</tr>
-<tr>
-<td><img src="docs/img/badge_detail.png" width="240"><br><sub>Tap a badge for the lore.</sub></td>
-<td><img src="docs/img/setup.png" width="240"><br><sub>Knobs and switches.</sub></td>
 <td><img src="docs/img/home_sleeping.png" width="240"><br><sub>Pocket mode. zzz.</sub></td>
 </tr>
 </table>
@@ -89,9 +99,11 @@ ESP32-C5). It's big. Make a sandwich.
 
 ## Living with your goblin
 
-- **Tabs** along the bottom: Home, Stats, Badges, Setup. **Swipe** left/right to flip tabs and pages.
-- **Tap the goblin** to pet it. It likes that. Probably.
-- **Tap a badge** to read what it's for. Secret ones stay secret until you earn them.
+- **Tabs** along the bottom: Home, Radar, Stats, Loot, Setup. **Swipe** left/right to flip tabs and pages.
+- **Tap the goblin** to pet it. It likes that. Probably. **Hold** it to pull up its share card.
+- **Loot** = quests, then the wardrobe (tap a hat to wear it), then the trophy shelf. Tap a badge to read
+  what it's for. Secret ones stay secret until you earn them.
+- **Food & fun meters** (top left of Home): a fed, entertained goblin earns +25% XP. Take it somewhere new.
 - **BOOT button** = pocket mode: screen off, goblin keeps sniffing. Tap the screen to wake it.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
 - **Setup → Goblin beacon** controls whether other goblins can find *yours* (see privacy below).
@@ -180,6 +192,9 @@ sd_card/                 copy to the microSD card
   where a sighting came from.
 - **New achievement?** Append a line to `ACHIEVEMENTS[]` in `src/core/Achievements.cpp`. Never reorder or
   rename ids; they're saved on SD.
+- **New hat?** Append to `kHats[]` in `src/core/Hats.cpp` and draw it in `src/ui/HatArt.cpp`.
+  **New quest type?** Append to `quests::Type` and `kDefs[]` in `src/core/Quests.cpp`.
+- **Share card link?** Set `NG_SHARE_URL` in `include/config.h`.
 - **New screen tweak?** Run `sh tools/preview/run.sh` and look at `tools/preview/out/` before flashing.
 
 ## Quest log
@@ -189,6 +204,7 @@ sd_card/                 copy to the microSD card
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
 - [x] 110 achievements, levels, streaks, exploration
+- [x] Hunger & boredom, quest boards, 13 hats, radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [ ] **Battery.** The board has no charger or battery sense. Plan: LiPo → charger/boost → 5 V on P5 pin 1,
       plus an I2C fuel gauge (MAX17048-ish) on CN1
@@ -202,5 +218,6 @@ sd_card/                 copy to the microSD card
   [Rajdhani](https://fonts.google.com/specimen/Rajdhani), SIL Open Font License (see `assets/fonts/`).
 - Board: [RockBase NM-CYD-C5](https://github.com/RockBase-iot/NM-CYD-C5).
 - Display library: [Arduino_GFX](https://github.com/moononournation/Arduino_GFX).
+- QR codes: [Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT), in `lib/qrcodegen/`.
 
 <p align="center"><i>Feed the goblin. Respect the airwaves.</i></p>
