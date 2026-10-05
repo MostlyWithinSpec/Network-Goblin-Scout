@@ -6,6 +6,7 @@
 #include "board.h"
 #include "config.h"
 #include "core/Engine.h"
+#include "diag/Diagnostics.h"
 #include "hal/Display.h"
 #include "hal/Fx.h"
 #include "hal/Gps.h"
@@ -109,6 +110,16 @@ void setup() {
 
   touch::begin();
   storage::begin();
+
+  // Bring-up mode. Holding BOOT *while* powering on may put the ESP32-C5 into its
+  // USB flashing mode instead of running us (BOOT is a strapping pin), so we give
+  // a short window after power-on to press it instead.
+  ui::splash("press BOOT now for diagnostics");
+  if (diag::requested(1500)) {
+    Scanner* const radios[] = {&wifiScanner, &bleScanner};
+    diag::run(radios, sizeof(radios) / sizeof(radios[0]));
+  }
+
   engine.begin();
 
   const Settings& st = engine.settings();
