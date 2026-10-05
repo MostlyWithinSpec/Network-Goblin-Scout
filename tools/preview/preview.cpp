@@ -252,6 +252,7 @@ int main() {
   model.syncMsg = "Uploading the hoard...";
   run(800); save("32_syncing");
   model.sync = UiModel::Sync::Done;
+  model.syncRegistered = true;
   model.syncMsg = "Synced! #12 of 340";
   model.syncMotd = "Rumour has it there's a goblin with 10,000 networks. Is it you?";
   ui::onEvent(ev(EventType::Synced, 12, "Synced! #12 of 340"), now);
@@ -260,6 +261,8 @@ int main() {
   model.syncMsg = "Wi-Fi refused: wrong password?";
   model.syncMotd = "";
   run(3000); save("34_sync_failed");
+  tap(266, 192);  // "remove me" once: asks to confirm
+  run(300); save("35_remove_confirm");
   printf("rendered\n");
   return 0;
 }

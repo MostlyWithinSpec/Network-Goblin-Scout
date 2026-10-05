@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.5.0"
+#define NG_FW_VERSION           "0.5.1"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -9,6 +9,7 @@
 #define NG_SYNC_SITE            "https://scout.networkgoblin.dev"
 #define NG_SHARE_URL            NG_SYNC_SITE                 // share card QR code
 #define NG_SYNC_URL             NG_SYNC_SITE "/api/v1/sync"  // Goblin Sync upload (network-goblin-labs api/)
+#define NG_FORGET_URL           NG_SYNC_SITE "/api/v1/forget"  // removes this goblin from the leaderboard
 #define SYNC_WIFI_TIMEOUT_MS    20000
 
 // ---- Display --------------------------------------------------------------

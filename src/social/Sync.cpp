@@ -28,6 +28,7 @@ uint32_t seq_ = 0;
 bool claimed_ = false;
 goblinsync::Status status_;
 uint32_t waitSince_ = 0;
+bool forgetting_ = false;  // this job removes our leaderboard entry instead of syncing
 
 // The upload runs in its own task so the UI keeps animating while Wi-Fi and TLS do their thing.
 // It never touches SPI (display/SD/touch): only Wi-Fi and the network stack.
@@ -36,6 +37,7 @@ struct Job {
   char sig[65];
   char ssid[33];
   char pass[64];
+  const char* url;
 };
 Job job;
 volatile bool jobDone = false;
@@ -185,7 +187,7 @@ void uploadTask(void*) {
     client.setHandshakeTimeout(15);
     HTTPClient http;
     http.setTimeout(15000);
-    if (http.begin(client, NG_SYNC_URL)) {
+    if (http.begin(client, job.url)) {
       http.addHeader("Content-Type", "application/json");
       http.addHeader("X-Goblin-Sig", job.sig);
       http.setUserAgent("NGScout/" NG_FW_VERSION);
@@ -217,6 +219,14 @@ void handleReply() {
   switch (jobCode) {
     case 200:
       if (!parsed || !(r["ok"] | false)) break;
+      if (forgetting_) {  // the server deleted our entry; a later Sync registers us again
+        claimed_ = false;
+        save();
+        strlcpy(s.msg, "Removed from the leaderboard", sizeof(s.msg));
+        log_i("sync: removed from the leaderboard");
+        finish(goblinsync::State::Done);
+        return;
+      }
       s.rank = r["rank"] | 0;
       s.of = r["of"] | 0;
       strlcpy(s.motd, r["motd"] | "", sizeof(s.motd));
@@ -297,8 +307,25 @@ void setWifi(const char* ssid, const char* pass) {
   status_ = Status();
 }
 
+void forget() {
+  if (busy() || !claimed_) return;
+  if (!hasWifi()) {
+    strlcpy(status_.msg, "Pick a Wi-Fi network first", sizeof(status_.msg));
+    status_.state = State::Failed;
+    return;
+  }
+  status_ = Status();
+  status_.state = State::Waiting;
+  strlcpy(status_.msg, "Finishing the current scan...", sizeof(status_.msg));
+  waitSince_ = millis();
+  forgetting_ = true;
+}
+
+bool registered() { return claimed_; }
+
 void start() {
   if (busy()) return;
+  forgetting_ = false;
   if (!hasWifi()) {
     strlcpy(status_.msg, "Pick a Wi-Fi network first", sizeof(status_.msg));
     status_.state = State::Failed;
@@ -317,7 +344,18 @@ void tick(ScanManager& scans) {
       if (!scans.idle() && millis() - waitSince_ < 15000) return;
       seq_++;
       save();  // before sending: a reply we never see must not let this seq be reused
-      job.body = buildBody();
+      if (forgetting_) {
+        JsonDocument d;
+        d["v"] = 1;
+        d["key"] = key_;
+        d["seq"] = seq_;
+        job.body = String();
+        serializeJson(d, job.body);
+        job.url = NG_FORGET_URL;
+      } else {
+        job.body = buildBody();
+        job.url = NG_SYNC_URL;
+      }
       sign(job.body, job.sig);
       strlcpy(job.ssid, ssid_, sizeof(job.ssid));
       strlcpy(job.pass, pass_, sizeof(job.pass));
@@ -337,7 +375,8 @@ void tick(ScanManager& scans) {
     case State::Uploading:
       if (jobPhase == 2 && status_.state == State::Connecting) {
         status_.state = State::Uploading;
-        strlcpy(status_.msg, "Uploading the hoard...", sizeof(status_.msg));
+        strlcpy(status_.msg, forgetting_ ? "Asking the server to forget us..." : "Uploading the hoard...",
+                sizeof(status_.msg));
       }
       if (!jobDone) return;
       handleReply();

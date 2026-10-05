@@ -31,6 +31,7 @@ struct Hooks {
   void (*setClock)(uint32_t localUnix) = nullptr;  // Setup > Clock
   void (*setWifi)(const char* ssid, const char* pass) = nullptr;  // Goblin Sync network
   void (*syncNow)() = nullptr;
+  void (*forgetMe)() = nullptr;          // remove this goblin from the leaderboard
 };
 
 // Time spent in each part of the last render(), in microseconds (needs Hooks::micros).

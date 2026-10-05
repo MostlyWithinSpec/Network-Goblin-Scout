@@ -185,6 +185,7 @@ ui::Hooks makeHooks() {
   h.setClock = onSetClock;
   h.setWifi = goblinsync::setWifi;
   h.syncNow = goblinsync::start;
+  h.forgetMe = goblinsync::forget;
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -239,6 +240,7 @@ void fillModel(uint32_t now) {
   model.syncMsg = ss.msg;
   model.syncMotd = ss.motd;
   model.syncProfile = goblinsync::profileUrl();
+  model.syncRegistered = goblinsync::registered();
   static WifiChoice nets[6];
   model.nets = nets;
   model.netCount = wifiScanner.recent(nets, 6);

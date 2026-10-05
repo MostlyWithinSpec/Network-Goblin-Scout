@@ -1649,6 +1649,8 @@ void startNaming(Screen returnTo, const char* current) { startKeyboard(Kb::Name,
 // Goblin Sync: pick a Wi-Fi network, press Sync, see your rank. The QR code opens the goblin's
 // page on the leaderboard site.
 const int16_t kSyncWifiY = kBodyY + 26, kSyncBtnY = kBodyY + 72, kSyncColW = 200;
+const int16_t kForgetX = 222, kForgetY = kBodyY + kBodyH - 22, kForgetW = 90, kForgetH = 20;
+uint32_t forgetArmedUntil = 0;  // "Remove me" needs a second tap within a few seconds
 const int kPickRows = 5;
 const int16_t kPickY = kBodyY + 26, kPickH = 26;
 
@@ -1698,10 +1700,26 @@ void drawSync(gfx::Surface& s, const UiModel& m) {
       s.textCentered(fSmall(), 218 + size / 2, kSyncWifiY + size + 17, "online", kDim);
     }
   }
-  s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 16, "counts only: never names, addresses or places", kFaint);
+  s.text(fSmall(), 10, kBodyY + kBodyH - 18, "counts only, never names or places", kFaint);
+  // leave the leaderboard: tap once to arm, again to confirm
+  if (m.syncRegistered && !busy) {
+    bool armed = (int32_t)(forgetArmedUntil - m.now) > 0;
+    s.fillRoundRect(kForgetX, kForgetY, kForgetW, kForgetH, 10, armed ? kRed : kPanel, armed ? 255 : 220);
+    s.roundRect(kForgetX, kForgetY, kForgetW, kForgetH, 10, armed ? kRed : kEdge);
+    s.textCentered(fSmall(), kForgetX + kForgetW / 2, kForgetY + 2, armed ? "tap to confirm" : "remove me", armed ? kText : kDim);
+  }
 }
 
 void tapSync(int16_t x, int16_t y, const UiModel& m) {
+  if (m.syncRegistered && m.sync != UiModel::Sync::Busy && x >= kForgetX - 4 && y >= kForgetY - 6) {
+    if ((int32_t)(forgetArmedUntil - m.now) > 0) {
+      forgetArmedUntil = 0;
+      if (hooks.forgetMe) hooks.forgetMe();
+    } else {
+      forgetArmedUntil = m.now + 4000;
+    }
+    return;
+  }
   if (x > kSyncColW + 8) return;
   if (y >= kSyncWifiY && y < kSyncWifiY + 38) {
     if (m.sync != UiModel::Sync::Busy) goTo(Screen::WifiPick, m.now);

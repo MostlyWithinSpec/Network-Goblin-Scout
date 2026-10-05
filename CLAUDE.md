@@ -213,4 +213,7 @@ Leaderboard: scout.networkgoblin.dev/leaderboard. `first_sync` achievement (123 
 Server deployed by the owner as Cloudflare Worker `goblin-sync` (Workers Builds, root `api`, D1 `goblin-sync`),
 route scout.networkgoblin.dev/api/*. **v0.5.0 on hardware: full sync confirmed** (owner's goblin on the live
 leaderboard: Wi-Fi picker, password keyboard, HTTPS + HMAC upload, server, pages). Web flasher serves v0.5.0.
-Next: account pairing (QR) and encounter cross-checks (docs/sync-plan.md).
+v0.5.1 (compiles; untested on hardware): "remove me" on the Sync screen (two taps) -> signed POST
+`/api/v1/forget` deletes the goblin's row; the device then re-claims on its next Sync. Accounts: owner
+chose not to have them (no personal data on the server, no support load).
+Next: encounter cross-checks (docs/sync-plan.md).

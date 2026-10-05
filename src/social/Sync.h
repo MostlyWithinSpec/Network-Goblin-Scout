@@ -30,6 +30,8 @@ void setWifi(const char* ssid, const char* pass);
 const char* key();                              // 16 hex chars
 const char* profileUrl();                       // the goblin's public page
 void start();                                   // owner pressed Sync
+void forget();                                  // owner asked to be removed from the leaderboard
+bool registered();                              // the server knows this goblin
 void tick(ScanManager& scans);                  // from loop(): drives the steps
 bool busy();
 const Status& status();

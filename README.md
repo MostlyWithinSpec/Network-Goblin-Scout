@@ -167,6 +167,8 @@ The goblin is nosy, not creepy.
   (level, XP, how many networks/devices, trophies, hats), then disconnects. Never names, addresses, ids or
   locations. Your Wi-Fi password stays on the device. Uploads are signed with a key that never leaves it
   (except once, over HTTPS, to register), so nobody else can post as your goblin.
+- **Leave any time.** Sync screen → **remove me** (tap twice) deletes your goblin's entry from the server.
+  Pressing Sync later puts it back.
 - **The one thing it sends on its own** is the goblin beacon: a non-connectable BLE advert with a random goblin id, a
   generated goblin name, its level and colour. It uses a random address made fresh at every boot (never the
   chip's real Bluetooth MAC). It also carries your hat and a rough hoard size for sniff-offs. Switch it off in Setup and you can still see other goblins.

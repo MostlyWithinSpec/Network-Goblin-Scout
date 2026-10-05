@@ -56,6 +56,7 @@ struct UiModel {
   const char* syncMsg = "";
   const char* syncMotd = "";
   const char* syncProfile = "";       // this goblin's page on the leaderboard site
+  bool syncRegistered = false;        // on the leaderboard (can ask to be removed)
   const WifiChoice* nets = nullptr;   // networks heard recently, for the picker (RAM only)
   size_t netCount = 0;
 
