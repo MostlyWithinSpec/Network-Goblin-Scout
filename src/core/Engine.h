@@ -21,6 +21,9 @@ class Engine {
   void synced(uint32_t rank, uint32_t of);           // a leaderboard sync went through
   size_t trackersNearby() const { return watch_.nearby(millis()); }
   uint8_t hoardTier() const;                         // for the beacon (sniff-offs)
+  // Beacon ids of goblins met (most recent last), for the leaderboard's encounter cross-check.
+  // These are the goblins' own random public ids, not addresses.
+  const uint32_t* metIds(size_t& count) const { count = metN_; return met_; }
 
   Stats& stats() { return stats_; }
   Settings& settings() { return settings_; }
@@ -63,6 +66,10 @@ class Engine {
   SeenStore t154_{"/scout/154.csv"};
   SeenStore pans_{"/scout/pans.txt"};
   SeenStore peers_{"/scout/peers.txt"};
+  static const size_t kMet = 200;
+  uint32_t met_[kMet] = {};
+  size_t metN_ = 0;
+  void rememberMet(uint32_t gid, bool save);
   SeenStore trackers_{"/scout/trackers.txt"};  // unique tracker addresses (salted), for the counter
   SeenStore trackersOk_{"/scout/trackers_ok.txt"};  // "it's mine": never alert for these
 

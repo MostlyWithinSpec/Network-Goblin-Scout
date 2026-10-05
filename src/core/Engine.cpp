@@ -18,6 +18,7 @@ Engine engine;
 namespace {
 const char* kStatePath = "/scout/state.json";
 const char* kSaltPath = "/scout/salt.bin";
+const char* kMetPath = "/scout/met.txt";
 
 uint32_t batchWifiNew = 0, batchBleNew = 0, batch154New = 0;
 
@@ -41,6 +42,16 @@ bool Engine::begin() {
   loadState();
   size_t w = wifi_.load(), s = ssids_.load(), b = ble_.load(), c = cells_.load();
   size_t t = t154_.load(), p = pans_.load(), g = peers_.load();
+  {  // goblins met, for the leaderboard cross-check: one 8-hex beacon id per line
+    String text = storage::readText(kMetPath);
+    int at = 0;
+    while (at < (int)text.length()) {
+      int nl = text.indexOf('\n', at);
+      if (nl < 0) nl = text.length();
+      if (nl - at == 8) rememberMet((uint32_t)strtoul(text.substring(at, nl).c_str(), nullptr, 16), false);
+      at = nl + 1;
+    }
+  }
   trackers_.load();
   trackersOk_.load();
   log_i("engine: loaded %u wifi, %u ssid, %u ble, %u cells, %u 802.15.4, %u pans, %u goblins", w, s, b, c, t,
@@ -243,6 +254,7 @@ void Engine::processPeer(const Sighting& s) {
   blip(id(Radio::Peer, s.mac, 4), s.rssi, Radio::Peer);
   slot->lastSeenMs = now;
   if (!encounter) return;
+  rememberMet(pid, true);
 
   stats_.peerEncounters++;
   char extra[24];
@@ -333,6 +345,22 @@ void Engine::trackerIsMine() {
   trackersOk_.flush();
   watch_.forget(lastAlertId_);
   lastAlertId_ = 0;
+}
+
+void Engine::rememberMet(uint32_t gid, bool save) {
+  if (!gid) return;
+  for (size_t i = 0; i < metN_; i++)
+    if (met_[i] == gid) return;
+  if (metN_ == kMet) {  // keep the most recent
+    memmove(met_, met_ + 1, (kMet - 1) * sizeof(met_[0]));
+    metN_--;
+  }
+  met_[metN_++] = gid;
+  if (save) {
+    char line[12];
+    snprintf(line, sizeof(line), "%08lx\n", (unsigned long)gid);
+    storage::append(kMetPath, line);
+  }
 }
 
 size_t Engine::nearbyPeers(uint32_t withinMs, const NearbyPeer** out, size_t max) const {

@@ -41,6 +41,8 @@ g++ -std=c++17 -Wall -Wextra -I src test/test_trackers.cpp src/core/Trackers.cpp
 g++ -std=c++17 -Wall -Wextra -I src test/test_clock.cpp -o /tmp/t && /tmp/t        # date maths
 sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
 python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
+sh tools/preview/goblins.sh    # goblin-in-every-hat + hat PNGs for the website profiles (labs scout/img/)
+python3 tools/web_data.py > ../network-goblin-labs/scout/data.js   # trophy + hat names for the website
 ```
 
 Use the preview to check any UI change before handing a build to the owner: it is the only way to
@@ -109,6 +111,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    network, one HTTPS POST of counts (`social/Sync.cpp`, server in the network-goblin-labs repo `api/`),
    disconnect, resume. Never add background syncing, probe-request scans, active BLE scans or
    802.15.4 transmissions. Sync uploads counts only: never SSIDs, MACs, salted ids, coordinates.
+   Exception for the encounter cross-check: our own beacon goblin id and the beacon ids of goblins met
+   (random public ids the goblins broadcast anyway; kept in /scout/met.txt). The site shows counts only.
 
 ## Layout
 
@@ -216,4 +220,16 @@ leaderboard: Wi-Fi picker, password keyboard, HTTPS + HMAC upload, server, pages
 v0.5.1 (confirmed on hardware, on the web flasher): "remove me" on the Sync screen (two taps) -> signed POST
 `/api/v1/forget` deletes the goblin's row; the device then re-claims on its next Sync. Accounts: owner
 chose not to have them (no personal data on the server, no support load).
-Next: encounter cross-checks (docs/sync-plan.md).
+Server anti-abuse (network-goblin-labs api/): signed uploads + seq (no impersonation/replay), 1 sync/min per
+goblin, new goblins capped at 5/IP/day and 500/day (IP stored only as a daily salted hash), first sync over
+200k XP and other implausible numbers shadow-hide the goblin, rude names masked as "Goblin xxxx". Owner is on
+Cloudflare's Free plan: over-limit requests fail, nothing is billed. Unhide a wrongly hidden goblin in the D1
+console: `UPDATE goblins SET hidden = 0, hidden_why = NULL WHERE key = '...'`.
+v0.5.2 (confirmed on hardware, on the web flasher): encounter cross-check. Engine remembers beacon ids of goblins met
+(last 200, /scout/met.txt, from v0.5.2 on); sync sends `gid` + `met`; the server counts a meeting only when
+both goblins report each other (`met_ok`, used by the goblins-met board). Beacon id squatting is ignored
+(first claim wins).
+Website extras (labs repo, server + pages): goblin of the week (last Monday-Sunday's biggest XP gain, hall
+of fame), profile wardrobe + trophy shelf + share button. Re-run `goblins.sh` and `web_data.py` and copy into
+the labs repo whenever hats or achievements change.
+Next: ideas list (docs/sync-plan.md section 6), battery hardware when parts arrive.

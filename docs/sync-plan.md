@@ -7,7 +7,7 @@ trophies, hats, friends), with public profiles and leaderboards.
 `api/` in the network-goblin-labs repo, pages at scout.networkgoblin.dev/leaderboard). Identity
 changed from the plan below: instead of QR pairing to an account, each Scout makes its own secret
 key on first boot (see "Identity as built"). Account pairing (section 3) and the encounter
-cross-check are still to do.
+cross-check is built too (v0.5.2: `gid` + `met` in the sync, `met_ok` on the server).
 
 ### Identity as built
 
