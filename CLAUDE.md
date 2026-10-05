@@ -41,6 +41,8 @@ g++ -std=c++17 -Wall -Wextra -I src test/test_trackers.cpp src/core/Trackers.cpp
 g++ -std=c++17 -Wall -Wextra -I src test/test_clock.cpp -o /tmp/t && /tmp/t        # date maths
 sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
 python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
+sh tools/preview/goblins.sh    # goblin-in-every-hat + hat PNGs for the website profiles (labs scout/img/)
+python3 tools/web_data.py > ../network-goblin-labs/scout/data.js   # trophy + hat names for the website
 ```
 
 Use the preview to check any UI change before handing a build to the owner: it is the only way to
@@ -227,4 +229,7 @@ v0.5.2 (confirmed on hardware, on the web flasher): encounter cross-check. Engin
 (last 200, /scout/met.txt, from v0.5.2 on); sync sends `gid` + `met`; the server counts a meeting only when
 both goblins report each other (`met_ok`, used by the goblins-met board). Beacon id squatting is ignored
 (first claim wins).
+Website extras (labs repo, server + pages): goblin of the week (last Monday-Sunday's biggest XP gain, hall
+of fame), profile wardrobe + trophy shelf + share button. Re-run `goblins.sh` and `web_data.py` and copy into
+the labs repo whenever hats or achievements change.
 Next: ideas list (docs/sync-plan.md section 6), battery hardware when parts arrive.
