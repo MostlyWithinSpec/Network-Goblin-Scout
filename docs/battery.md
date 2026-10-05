@@ -47,9 +47,23 @@ P5 pin 1 ──Q1 (AO3401A)──┘
 - **Catch:** IP5306 boards switch themselves off below ~45 mA. NG Scout normally draws more than
   that, so it should stay on, but some modules need a button press to wake.
 
+### C. Most accurate: SparkFun Battery Babysitter + a 5 V boost
+
+- The **Battery Babysitter** charges the LiPo (BQ24075) and has a **BQ27441 fuel gauge** that counts
+  charge in and out, so its percentage is better than a voltage-based guess. The firmware supports it
+  (v0.4.1+): it's detected automatically on CN1 at I2C address 0x55.
+- **It has no 5 V boost.** On battery its output is the cell voltage (3.0-4.2 V): too low for the
+  5V pad, too high for the 3V3 pad. Add a **5 V step-up** (e.g. Pololu U3V40F5 or U1V11F5):
+  Babysitter output → boost IN, boost 5V OUT → **Schottky (SS14)** → board 5V pad, all GNDs together.
+- **I2C:** SDA/SCL to CN1 pins 2/3, GND to pin 4. If the Babysitter's I2C pull-ups need a supply pin,
+  feed it **3.3 V from CN1 pin 1**, never the battery: the ESP32-C5's pins take 3.6 V at most. Check
+  the Babysitter's hookup guide for which pin that is.
+- Set your cell's capacity in `include/config.h`: `BATTERY_CAPACITY_MAH` (default 2000). The firmware
+  writes it into the gauge at boot when it differs.
+
 ## Battery percentage on screen: MAX17048 fuel gauge
 
-- A MAX17048 breakout (Adafruit #5580, SparkFun, or a generic one) reads the cell and reports
+- (Or the BQ27441 on a Battery Babysitter, option C above.) A MAX17048 breakout (Adafruit #5580, SparkFun, or a generic one) reads the cell and reports
   **percentage, voltage, and whether it's charging** over I2C (address 0x36).
 - **Connect it to CN1:** pin 1 = 3.3 V, pin 2 = SDA (IO9), pin 3 = SCL (IO8), pin 4 = GND.
   ⚠️ CN1 is **not** in the Qwiic/STEMMA QT pin order (GND, 3V3, SDA, SCL), so make a cable

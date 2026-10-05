@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.4.0"
+#define NG_FW_VERSION           "0.4.1"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -38,6 +38,11 @@
 
 // ---- Persistence ----------------------------------------------------------
 #define STATE_SAVE_INTERVAL_MS  30000      // plus within 3 s of level-ups, achievements, quests
+
+// ---- Battery ----------------------------------------------------------------
+// Your LiPo's capacity. Only the BQ27441 gauge (SparkFun Battery Babysitter) needs it:
+// it counts charge in and out. The MAX17048 works it out from the voltage instead.
+#define BATTERY_CAPACITY_MAH    2000
 
 // ---- GPS ------------------------------------------------------------------
 #define GPS_BAUD                9600

@@ -111,7 +111,7 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 include/board.h, config.h, ng_log_level.h
 src/main.cpp         setup + non-blocking loop
 src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20,
-                     Battery (optional MAX17048 fuel gauge on CN1)
+                     Battery (optional fuel gauge on CN1: MAX17048 0x36 or BQ27441 0x55)
 src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
                      Ieee802154Frame.h (pure MAC header parser)
 src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format,
@@ -168,7 +168,8 @@ Untested on hardware: goblin beacon + encounters + sniff-offs. Test with one boa
 Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
 (a level-12 goblin called "Mock"; change the `00` before the name to `A0` for a "Huge hoard", tier 5).
 
-v0.4.0 (compiles; untested on hardware): tracker alert, sniff-offs, battery gauge, clock + day/night,
+v0.4.0 on hardware: owner reports the new features working (tracker alert not yet field-tested). Features:
+tracker alert, sniff-offs, battery gauge, clock + day/night,
 seasonal hats. Tracker test: an AirTag only sends the "separated" advert we look for once it has been away
 from its owner's iPhone for a while, so leave the iPhone at home and walk the AirTag + Scout through 3+
 places for 15+ min (Tile tags always count, so a Tile owner's own tag will alert: "It's mine").
@@ -196,4 +197,6 @@ the 5V pad or P5 pin 1, never LiPo on 3V3/5V directly), tracker alert (core/Trac
 sniff-offs (hoard tier in beacon flags bits 5-7, backwards compatible), wall clock (GPS + UTC offset, or set
 by hand) with day/night background, night naps and 4 seasonal hats (ids 14-17), 12 achievements (122 total;
 the bitset holds 128, widen `Stats::achieved` before adding more than 6).
+v0.4.1: BQ27441 fuel gauge (SparkFun Battery Babysitter, needs a separate 5 V boost) alongside the
+MAX17048; capacity from `BATTERY_CAPACITY_MAH`. Owner reports all v0.4.0 features working on hardware.
 Next: sync/leaderboards (docs/sync-plan.md; rule 7 will need amending for owner-initiated sync).

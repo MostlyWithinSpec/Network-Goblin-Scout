@@ -141,7 +141,7 @@ void checkI2c() {
     if ((found = aht20::begin(Wire))) break;
   }
   if (!found) scanBus(PIN_I2C_SDA, PIN_I2C_SCL);  // neither worked: report the schematic order
-  battery::begin();  // optional MAX17048 fuel gauge (0x36), uses the bus as set up above
+  battery::begin();  // optional fuel gauge (MAX17048 0x36 / BQ27441 0x55), uses the bus as set up above
 }
 
 void tickAht(uint32_t now) {
@@ -282,10 +282,10 @@ void build() {
   }
 
   if (battery::present())
-    add(battery::percent() > 15 ? GOOD : WARN, "BATT  %u%%  %u mV  %s", battery::percent(), battery::millivolts(),
-        battery::charging() ? "charging" : battery::discharging() ? "on battery" : "resting");
+    add(battery::percent() > 15 ? GOOD : WARN, "BATT  %s  %u%%  %u mV  %s", battery::name(), battery::percent(),
+        battery::millivolts(), battery::charging() ? "charging" : battery::discharging() ? "on battery" : "resting");
   else
-    add(DIM, "BATT  no MAX17048 fuel gauge (optional, see docs/battery.md)");
+    add(DIM, "BATT  no fuel gauge (optional, see docs/battery.md)");
 
   char devs[40] = "none";
   size_t used = 0;
