@@ -8,6 +8,13 @@
 <i>Firmware for the NM-CYD-C5 · ESP32-C5 · dual-band Wi-Fi 6 · BLE 5 · 802.15.4</i></p>
 
 <p align="center">
+  <a href="https://scout.networkgoblin.dev/flash/"><b>⚡ Flash it in your browser</b></a> ·
+  <a href="https://scout.networkgoblin.dev/leaderboard/"><b>🏆 Leaderboard</b></a> ·
+  <a href="https://scout.networkgoblin.dev/"><b>🌐 scout.networkgoblin.dev</b></a> ·
+  <a href="https://networkgoblin.dev/">🧌 Network Goblin Labs</a>
+</p>
+
+<p align="center">
   <img src="docs/img/home_idle.png" width="320" alt="Home screen">
   <img src="docs/img/encounter.png" width="320" alt="Goblin encounter">
 </p>
@@ -23,8 +30,12 @@ Carry it around and it quietly listens for Wi-Fi networks, Bluetooth gadgets and
 chatter. Every new thing it hears goes into the **hoard**. The hoard gives XP. XP makes the goblin
 level up. Levelling up makes the goblin insufferable.
 
-It never connects to anything, never sends probes, and never stores the actual names or addresses
-of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
+It never connects to anything (except your own Wi-Fi, when *you* press Sync), never sends probes, and
+never stores the actual names or addresses of what it hears. It just *sniffs*. Respectfully. Like a goblin
+with manners.
+
+**Want one?** Grab an [NM-CYD-C5](https://github.com/RockBase-iot/NM-CYD-C5), plug it into a computer and
+press **Install** on the [web flasher](https://scout.networkgoblin.dev/flash/). Two minutes, no tools.
 
 ## The goblin's powers
 
@@ -36,17 +47,17 @@ of what it hears. It just *sniffs*. Respectfully. Like a goblin with manners.
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
 | 👃 **Sniff-offs** | Then they sniff each other's hoards. Bigger hoard wins (level breaks a tie) and *both* goblins get XP. Bragging rights not included, but strongly implied. |
 | 🏷️ **Tracker alert** | Actually useful: if an AirTag, Tile, SmartTag or Google tracker keeps tagging along with you through 3+ places for 15+ minutes, the goblin sounds the alarm. Your own? Tap **It's mine** and it never nags about that one again. |
-| 🏆 **122 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
+| 🏆 **123 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
 | ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks (and babbles, if you wire up a speaker). Mostly about packets. |
 | 🍖 **Needs** | It gets **hungry** (feed it new devices) and **bored** (show it new channels, places, networks and goblins). Keep both meters full and it earns **+25% XP**. Neglect it and it sulks. |
 | 📜 **Quests** | A board of three challenges at a time: *"Sniff out 20 new networks"*, *"Find a Wi-Fi 6 router"*... Clear the board for bonus XP, then a fresh one turns up. |
 | 🎩 **Hats** | 17 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones, plus seasonal ones (Witch Hat in October, Santa Hat in December...). Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
 | 📡 **Radar** | A live sweep of everything heard in the last minute. Distance = signal strength, colour = radio, other goblins show up as little goblin heads. |
-| 🪪 **Share card** | Hold the goblin (or Setup → Share card) for a trading card with its name, level, hat, stats and a **QR code**. Made for photos. |
+| 🪪 **Share card** | Hold the goblin (or Setup → Share card) for a trading card with its name, level, hat, stats and a **QR code** (to your goblin's leaderboard page once you've synced). Made for photos. |
 | 🌙 **Day & night** | Dawn glow, dusk glow, a starry night sky, and a goblin that naps from 11 pm (it keeps sniffing in its sleep). Needs the time: GPS, or set the clock in Setup. |
-| 🔋 **Battery-aware** *(optional)* | Add a LiPo and a MAX17048 fuel gauge ([docs/battery.md](docs/battery.md)) for battery % in the status bar and a sleepy goblin when it runs low. |
+| 🔋 **Battery-aware** *(optional)* | Add a LiPo and a fuel gauge (MAX17048, or the BQ27441 on a SparkFun Battery Babysitter; see [docs/battery.md](docs/battery.md)) for battery % and a charging bolt in the status bar, and a sleepy goblin when it runs low. |
 | 🗺️ **Exploration** *(GPS optional)* | Plug in a GPS for daily streaks and "areas explored". Coordinates never leave the SD card. |
-| 🏆 **Leaderboards** | Press **Sync** (Setup → Sync & leaderboard) and your goblin uploads a summary of its hoard over your Wi-Fi to [the leaderboard](https://scout.networkgoblin.dev/leaderboard/). Counts only. Weekly and all-time boards, and a profile page per goblin. |
+| 📈 **Leaderboards** | Press **Sync** (Setup → Sync & leaderboard) and your goblin uploads a summary of its hoard over your Wi-Fi to [the leaderboard](https://scout.networkgoblin.dev/leaderboard/): XP, this week, Wi-Fi, Bluetooth, mesh, goblins met, trophies and sniff-offs, plus a profile page per goblin. Counts only, no account needed, and **remove me** takes you off again. |
 | 📴 **Offline first** | No account, no cloud, no app needed. Syncing is optional and only happens when you press the button. The SD card is optional too (but without it the goblin forgets everything at bedtime). |
 
 ## Screenshots
@@ -89,22 +100,32 @@ firmware draws, minus the smudges on your screen.</sub>
 
 ## Summoning a goblin
 
-### The lazy way (no toolchain)
+### The easy way: web flasher (recommended)
 
-1. Open this repo's **Actions** tab, click the latest green **build**, scroll to **Artifacts**,
-   grab `ng-scout-<commit>`.
+1. Open **[scout.networkgoblin.dev/flash](https://scout.networkgoblin.dev/flash/)** in **Chrome or Edge** on a computer.
+2. Plug the board in with a USB-C *data* cable.
+3. Press **Install Scout** (new board) or **Update Scout** (already running Scout), pick the board's port, wait a minute.
+4. Copy [`sd_card/`](sd_card/) onto a FAT32 microSD card and slot it in. The goblin needs somewhere to keep its hoard.
+5. Press RESET. Accept the disclaimer and **name your goblin** on the on-screen keyboard. Scanning starts after that.
+
+The flasher always serves the latest tested release and writes every file at the right address.
+
+### By hand (no web flasher)
+
+1. Download the files from the [web flasher page](https://scout.networkgoblin.dev/flash/) (links under
+   *Prefer the command line?*), or from this repo's **Actions** tab → latest green **build** → **Artifacts**
+   (`ng-scout-<commit>`, every commit, untested).
 2. Flash `firmware.factory.bin` at `0x0`:
    - **Browser:** <https://espressif.github.io/esptool-js/> (Chrome/Edge), add the file at `0x0`, Program.
    - **Command line:** `pip install esptool`, then
      `esptool --chip esp32c5 --port <COM5 or /dev/ttyACM0> write-flash 0x0 firmware.factory.bin`
 3. If it won't connect: hold **BOOT**, tap **RESET**, let go of BOOT, try again.
-4. Copy `sd_card/` onto a FAT32 microSD card and slot it in. The goblin needs somewhere to keep its hoard.
-5. First boot: accept the disclaimer and **name your goblin** on the on-screen keyboard. Scanning starts after that.
+4. SD card and first boot: as steps 4-5 above.
 
 ### Updating without losing your goblin
 
 Your progress lives on the **SD card** (`/scout/`), so re-flashing doesn't touch it.
-- **Updates:** flash `firmware.bin` at `0x10000` (app only, keeps the chip's settings too).
+- **Updates:** the web flasher's **Update Scout**, or `firmware.bin` at `0x10000` by hand (app only, keeps the chip's settings too).
 - **First install or recovery:** flash `firmware.factory.bin` at `0x0`. This also wipes the chip's
   internal settings, but the goblin's name and ID are restored from the SD card at the next boot.
 
@@ -136,7 +157,10 @@ ESP32-C5). It's big. Make a sandwich.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
 - **Setup → Goblin beacon** controls whether other goblins can find *yours* (see privacy below).
 - **Setup → Sync & leaderboard**: pick your Wi-Fi once, then **Sync now** whenever you want your goblin's
-  numbers on the leaderboard. The QR code on that screen opens your goblin's page.
+  numbers on the [leaderboard](https://scout.networkgoblin.dev/leaderboard/). The QR code on that screen opens
+  your goblin's page. **remove me** (tap twice) takes your goblin off the boards; Sync puts it back.
+- **Back up `/scout/sync.key`** somewhere safe: it's your goblin's leaderboard identity. If the SD card dies,
+  copy it onto the new card and your goblin keeps its place.
 - **Setup → Clock** sets the time (no GPS needed; it's forgotten at power-off). With GPS it sets your time zone instead.
 - **Setup → About** to rename your goblin.
 
@@ -220,9 +244,9 @@ Setup → Sprite pack. Example: the included `pixel_goblin`.
 include/board.h          pin map from the NM-CYD-C5 v1.0 schematic
 include/config.h         tunables: display, touch calibration, scan timing, XP rules
 src/main.cpp             wiring + main loop
-src/hal/                 display, touch, SD, GPS, LED/speaker
+src/hal/                 display, touch, SD, GPS, LED/speaker, battery gauge
 src/scanners/            one Scanner per radio: Wi-Fi, BLE, 802.15.4 (+ ScanManager)
-src/social/              the goblin's identity and its "I'm a goblin" beacon
+src/social/              the goblin's identity, its "I'm a goblin" beacon, sniff-offs and Goblin Sync
 src/core/                Engine (sighting → XP → achievements → SD), achievements list
 src/ui/                  screens, the animated goblin, widgets; gfx/ = tiny renderer
 src/diag/                hardware bring-up mode
@@ -248,14 +272,15 @@ sd_card/                 copy to the microSD card
 - [x] Dual-band Wi-Fi + BLE sniffing, persistent dedupe
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
-- [x] 110 achievements, levels, streaks, exploration
-- [x] Hunger & boredom, quest boards, 13 hats, radar, share card with QR code
+- [x] 123 achievements, levels, streaks, exploration
+- [x] Hunger & boredom, quest boards, 17 hats (4 seasonal), radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
 - [x] Tracker alert, sniff-offs, day/night, seasonal hats
-- [x] Battery support in firmware (MAX17048). The hardware side is DIY: [docs/battery.md](docs/battery.md)
-- [x] Goblin Sync and [leaderboards](https://scout.networkgoblin.dev/leaderboard/)
-- [ ] Account pairing, encounter cross-checks: [docs/sync-plan.md](docs/sync-plan.md)
+- [x] Battery support in firmware (MAX17048 or BQ27441). The hardware side is DIY: [docs/battery.md](docs/battery.md)
+- [x] Goblin Sync, [leaderboards](https://scout.networkgoblin.dev/leaderboard/) and goblin profiles, self-service removal
+- [x] [Web flasher](https://scout.networkgoblin.dev/flash/): install and update from the browser
+- [ ] Encounter cross-checks for the "goblins met" board: [docs/sync-plan.md](docs/sync-plan.md)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits
