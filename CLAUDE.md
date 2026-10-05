@@ -90,26 +90,26 @@ framebuffer location, SD write test, raw touch, Wi-Fi/BLE scan counts, GPS NMEA 
 AHT20 reading (tries both I2C pin orders), I2C scan, BOOT state, LED colour cycle,
 colour swatches and corner marks. Press RESET to exit. Counts only — no MACs/SSIDs/coordinates.
 
-## Known hardware unknowns (resolve from flash reports, then update this list)
+## Hardware status (from flash reports — update as results come in)
 
-- **Touch axis mapping/calibration**: `TOUCH_*` in `config.h` are guesses (swap XY, no
-  inversion, X 185–3700, Y 250–3800). The vendor's TFT_eSPI calibration is
-  `{225, 3413, 403, 3334, 1}`.
-- **Display colour order and inversion**: we use Arduino_GFX's default ST7789 init with
-  `ips=false`. Red/blue swapped => RGB/BGR order; dark/negative colours => inversion
-  (Settings -> Invert colors toggles it at runtime).
-- **Display rotation**: `DISPLAY_ROTATION 3` matches the vendor/Bruce config; unverified with Arduino_GFX.
-- **SPI speed**: display at 40 MHz (`DISPLAY_SPI_HZ`), SD at 20 MHz, touch at 2.5 MHz.
-  Drop the display to 20 MHz if there are glitches.
+Confirmed working on the owner's board (bring-up mode, first flash):
+splash/display, colour order (swatches match), rotation, RGB LED, PSRAM (8 MB, framebuffer
+in PSRAM), microSD mount + write test, touch IRQ, Wi-Fi scanning on 2.4 and 5 GHz, BLE scanning.
+
+Still unknown / open:
+
+- **Touch axes**: first flash showed the crosshair opposite the finger, so both axes are
+  now inverted (`TOUCH_INVERT_X/Y 1`). Awaiting confirmation; if only one axis is right,
+  flip the other back. Min/max calibration (`TOUCH_RAW_*`) still unverified; the vendor's
+  TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
+- **AHT20 (U28)**: on the schematic (IO9 SDA / IO8 SCL, 4.7k pull-ups) but did not answer on
+  the first flash. Possibly not fitted on this board. Check the I2C scan line / look for the part.
+- **SPI speed**: display at 40 MHz (`DISPLAY_SPI_HZ`), SD at 20 MHz, touch at 2.5 MHz. No glitches reported.
 - **Which USB-C port carries serial logs**: we log to the C5's native USB (USB-Serial-JTAG,
   `ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). The other port is a CH340 on
-  UART0 (GPIO 11/12). Which physical port is which is unconfirmed.
-- **I2C pin order**: schematic says SDA 9 / SCL 8, vendor config says the reverse.
-  Bring-up mode reports which one finds the AHT20.
-- **PSRAM**: expected 8 MB, and the screen framebuffer should land in PSRAM.
-- **5 GHz scanning**: `WiFi.setBandMode(WIFI_BAND_MODE_AUTO)` compiles in; not yet seen working.
-- **BOOT button at power-on**: assumed to enter download mode (Espressif strapping);
-  confirm on the board.
+  UART0 (GPIO 11/12).
+- **BOOT button at power-on**: assumed to enter download mode (Espressif strapping); unconfirmed.
+- **GPS, speaker**: not connected yet.
 
 ## Roadmap (don't start until the owner confirms hardware works)
 
