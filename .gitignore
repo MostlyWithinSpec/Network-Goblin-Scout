@@ -1,3 +1,4 @@
 .pio/
 .vscode/
 *.tmp
+tools/preview/out/

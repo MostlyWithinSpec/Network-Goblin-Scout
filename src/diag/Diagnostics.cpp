@@ -335,13 +335,14 @@ void printSerial() {
 
 namespace diag {
 
-bool requested(uint32_t windowMs) {
+bool requested(uint32_t windowMs, void (*tick)()) {
   pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
   Serial.printf("Press BOOT within %lu ms for hardware bring-up mode\n", (unsigned long)windowMs);
   uint32_t start = millis();
   while (millis() - start < windowMs) {
     if (digitalRead(PIN_BOOT_BTN) == LOW) return true;
-    delay(10);
+    if (tick) tick();
+    else delay(10);
   }
   return false;
 }

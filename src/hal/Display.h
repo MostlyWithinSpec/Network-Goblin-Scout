@@ -5,6 +5,7 @@
 namespace display {
 bool begin();
 Arduino_Canvas* gfx();
+uint16_t* framebuffer();            // 320x240 RGB565 in PSRAM (null if init failed)
 void flush();
 void setBrightness(uint8_t pct);   // 0..100
 void setInverted(bool inv);

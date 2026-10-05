@@ -1,14 +1,14 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.1.0"
+#define NG_FW_VERSION           "0.2.0"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
 // ---- Display --------------------------------------------------------------
 #define DISPLAY_SPI_HZ          40000000   // drop to 20000000 if you see glitches
 #define DISPLAY_ROTATION        3          // landscape, matches vendor/Bruce config
-#define UI_FRAME_MS             100        // ~10 fps redraw
+#define UI_FRAME_MS             40         // ~25 fps target (a full-screen SPI push takes ~31 ms at 40 MHz)
 
 // ---- Touch (XPT2046 raw 12-bit values) ------------------------------------
 // Use Settings -> Touch test to read raw values at the corners, then adjust.

@@ -37,6 +37,8 @@ bool begin() {
 
 Arduino_Canvas* gfx() { return canvas; }
 
+uint16_t* framebuffer() { return canvas ? canvas->getFramebuffer() : nullptr; }
+
 void flush() {
   if (canvas && !sleeping) canvas->flush();
 }
