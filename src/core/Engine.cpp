@@ -607,7 +607,7 @@ void Engine::loadState() {
     settings_.invert = set["invert"] | false;
     settings_.fastDisplay = set["fastDisplay"] | true;
     settings_.hat = set["hat"] | 0;
-    settings_.goblinId = set["goblinId"] | 0;
+    settings_.goblinId = set["goblinId"] | 0u;  // 0u: ids above 2^31 don't fit an int default
     settings_.goblinName = set["name"] | "";
     settings_.agreed = set["agreed"] | false;
     settings_.spritePack = set["sprites"] | "goblin";

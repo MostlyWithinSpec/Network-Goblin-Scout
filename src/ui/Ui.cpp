@@ -528,10 +528,13 @@ int wrap(const gfx::Font& f, const char* text, int16_t maxW, char out[][64], int
     memcpy(trial, cur, len);
     size_t tl = len;
     if (tl) trial[tl++] = ' ';
-    memcpy(trial + tl, p, wl);
-    tl += wl;
-    trial[tl] = 0;
-    if (len && Surface::textWidth(f, trial) > maxW) {
+    bool fits = tl + wl < sizeof(trial);  // also break when the buffer (not the pixels) is full
+    if (fits) {
+      memcpy(trial + tl, p, wl);
+      tl += wl;
+      trial[tl] = 0;
+    }
+    if (len && (!fits || Surface::textWidth(f, trial) > maxW)) {
       memcpy(out[lines++], cur, len + 1);
       memcpy(cur, p, wl);
       cur[wl] = 0;
