@@ -205,12 +205,12 @@ by hand) with day/night background, night naps and 4 seasonal hats (ids 14-17), 
 the bitset holds 128, widen `Stats::achieved` before adding more than 6).
 v0.4.1: BQ27441 fuel gauge (SparkFun Battery Babysitter, needs a separate 5 V boost) alongside the
 MAX17048; capacity from `BATTERY_CAPACITY_MAH`. Owner reports all v0.4.0 features working on hardware.
-v0.5.0 (compiles; untested on hardware): Goblin Sync. Setup > Sync & leaderboard: pick Wi-Fi (RAM list of
+v0.5.0 (confirmed on hardware): Goblin Sync. Setup > Sync & leaderboard: pick Wi-Fi (RAM list of
 nearby names or type it; keyboard has a symbols layer), Sync now -> scans pause, upload task joins Wi-Fi and
 POSTs to `NG_SYNC_URL` over HTTPS (ESP-IDF CA bundle), HMAC-SHA256 with a device secret (NVS + /scout/sync.key),
 monotonic seq. Server: network-goblin-labs `api/` (Worker + D1, smoke-tested locally with wrangler).
 Leaderboard: scout.networkgoblin.dev/leaderboard. `first_sync` achievement (123 total).
 Server deployed by the owner as Cloudflare Worker `goblin-sync` (Workers Builds, root `api`, D1 `goblin-sync`),
-route scout.networkgoblin.dev/api/*: owner confirmed it answers. First real device sync: awaiting report.
-The web flasher still serves v0.4.0; move it to v0.5.x once a device sync is confirmed.
+route scout.networkgoblin.dev/api/*. **v0.5.0 on hardware: full sync confirmed** (owner's goblin on the live
+leaderboard: Wi-Fi picker, password keyboard, HTTPS + HMAC upload, server, pages). Web flasher serves v0.5.0.
 Next: account pairing (QR) and encounter cross-checks (docs/sync-plan.md).
