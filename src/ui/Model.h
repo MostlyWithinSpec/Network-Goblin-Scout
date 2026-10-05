@@ -44,6 +44,11 @@ struct UiModel {
   const Blip* blips = nullptr;
   size_t blipCount = 0;
 
+  // wall clock (core/Clock.h): local unix seconds, 0 = unknown
+  uint32_t localTime = 0;
+  bool clockGps = false;              // from GPS (else set by hand)
+  uint32_t buildTime = 0;             // firmware build time: starting point for setting the clock
+
   // share card QR code target
   const char* shareUrl = "";
 

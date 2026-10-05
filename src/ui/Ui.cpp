@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../core/Achievements.h"
+#include "../core/Clock.h"
 #include "../core/Hats.h"
 #include "../core/Quests.h"
 #include "../core/Trackers.h"
@@ -29,12 +30,14 @@ const float kPi = 3.14159265f;
 // ---------------------------------------------------------------------------
 // State
 // The first five are the tabs, in tab order.
-enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming };
+enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming, Clock };
 const int kTabCount = 5;
+void goTo(Screen sc, uint32_t now);
 
 Hooks hooks;
 uint16_t* bgCache = nullptr;
 bool bgReady = false;
+uint8_t bgPhase = clk::kDay;   // time of day baked into bgCache
 Companion companion;
 
 Screen screen = Screen::Home;
@@ -169,8 +172,26 @@ const char* const kHappyQuips[] = {"Life is good.", "Best hoard ever!", "We make
 
 // ---------------------------------------------------------------------------
 // Background
-void renderStaticBg(gfx::Surface& s) {
+// Time-of-day wash, baked into the cached background: horizontal bands fading upwards
+// from the bottom (dawn/dusk glow) or a darker sky at night.
+void skyTint(gfx::Surface& s, uint8_t phase) {
+  if (phase == clk::kNight) {
+    s.fillRect(0, 0, W, H, 0x0000, 150);
+    s.gradientV(0, 0, W, H / 2, gfx::hex(0x13235E), 0x0000, 90);
+    return;
+  }
+  if (phase == clk::kDay) return;
+  uint16_t c = phase == clk::kDawn ? gfx::hex(0xFF8A5C) : gfx::hex(0xC0408C);
+  const int bands = 16;
+  for (int i = 0; i < bands; i++) {
+    int16_t y = H / 4 + i * (H - H / 4) / bands;
+    s.fillRect(0, y, W, (H - H / 4) / bands + 1, c, (uint8_t)(8 + i * 7));
+  }
+}
+
+void renderStaticBg(gfx::Surface& s, uint8_t phase) {
   s.gradientV(0, 0, W, H, kBgTop, kBgBottom);
+  skyTint(s, phase);
   // honeycomb of faint dots
   for (int16_t y = 6, row = 0; y < H; y += 12, row++)
     for (int16_t x = (row & 1) ? 10 : 2; x < W; x += 16) s.pixel(x, y, kEdge, 90);
@@ -198,17 +219,36 @@ void renderStaticBg(gfx::Surface& s) {
     }
 }
 
+uint8_t timePhase(const UiModel& m) {
+  return m.localTime ? clk::phase(clk::fromUnix(m.localTime).hour) : clk::kDay;
+}
+
+void drawStars(gfx::Surface& s, uint32_t now) {
+  uint32_t r = 0x5EED5u;
+  for (int i = 0; i < 34; i++) {
+    r = r * 1103515245u + 12345u;
+    int16_t x = (int16_t)((r >> 8) % W), y = (int16_t)(kStatusH + (r >> 18) % (H - kStatusH - kNavH));
+    uint32_t tw = (now / 90 + (r >> 3)) % 64;  // slow twinkle, integer only
+    uint8_t a = (uint8_t)(110 + (tw < 32 ? tw : 63 - tw) * 4);
+    s.pixel(x, y, 0xFFFF, a);
+    if ((r >> 28) == 0) s.glow(x, y, 4, gfx::hex(0xBFD8FF), a / 3);
+  }
+}
+
 void drawBackground(gfx::Surface& s, const UiModel& m) {
+  uint8_t phase = timePhase(m);
   if (bgCache) {
-    if (!bgReady) {
+    if (!bgReady || phase != bgPhase) {
       gfx::Surface bg(bgCache, W, H);
-      renderStaticBg(bg);
+      renderStaticBg(bg, phase);
       bgReady = true;
+      bgPhase = phase;
     }
     memcpy(s.pixels(), bgCache, (size_t)W * H * 2);
   } else {
-    renderStaticBg(s);
+    renderStaticBg(s, phase);
   }
+  if (phase == clk::kNight) drawStars(s, m.now);
   // drifting data motes
   for (auto& mo : motes) {
     mo.y -= mo.speed * dt;
@@ -318,7 +358,7 @@ void drawNav(gfx::Surface& s) {
   int16_t y = H - kNavH;
   s.fillRect(0, y, W, kNavH, kBgBottom, 220);
   s.hline(0, y, W, kEdge);
-  int active = screen == Screen::TouchTest || screen == Screen::Share ? 4 : (int)screen;
+  int active = screen == Screen::TouchTest || screen == Screen::Share || screen == Screen::Clock ? 4 : (int)screen;
   float target = active * (float)kTabW;
   navX += (target - navX) * clampf(dt * 14, 0, 1);
   s.fillRoundRect((int16_t)navX + 3, y + 4, kTabW - 6, kNavH - 8, 8, kCyan, 35);
@@ -645,7 +685,7 @@ void drawQuests(gfx::Surface& s, const UiModel& m) {
 const int kHatCols = 7;
 void hatCell(int i, int16_t& cx, int16_t& cy) {  // i = hat id (0 = none)
   cx = 27 + (i % kHatCols) * 44;
-  cy = kBodyY + 60 + (i / kHatCols) * 56;
+  cy = kBodyY + 50 + (i / kHatCols) * 46;
 }
 
 void drawWardrobe(gfx::Surface& s, const UiModel& m) {
@@ -657,13 +697,13 @@ void drawWardrobe(gfx::Surface& s, const UiModel& m) {
     hatCell(i, cx, cy);
     bool got = i == 0 || (m.hatMask & (1u << (i - 1)));
     bool on = i == worn;
-    s.fillRoundRect(cx - 20, cy - 26, 40, 50, 7, on ? kPanelHi : kPanel, 230);
-    s.roundRect(cx - 20, cy - 26, 40, 50, 7, on ? kCyan : kEdge, on ? 255 : 150);
-    if (on) s.glow(cx, cy, 26, kCyan, 50);
+    s.fillRoundRect(cx - 20, cy - 24, 40, 44, 7, on ? kPanelHi : kPanel, 230);
+    s.roundRect(cx - 20, cy - 24, 40, 44, 7, on ? kCyan : kEdge, on ? 255 : 150);
+    if (on) s.glow(cx, cy, 24, kCyan, 50);
     if (i == 0) {
-      s.textCentered(fSmall(), cx, cy - 8, "none", kDim);
+      s.textCentered(fSmall(), cx, cy - 9, "none", kDim);
     } else if (got) {
-      drawHat(s, (uint8_t)i, cx, cy + 12, 0.85f, m.now, false);
+      drawHat(s, (uint8_t)i, cx, cy + 11, 0.8f, m.now, false);
     } else {
       icon(s, Glyph::Lock, cx, cy - 2, 14, kFaint);
     }
@@ -675,11 +715,11 @@ void drawWardrobe(gfx::Surface& s, const UiModel& m) {
   if (show > 0) {
     char b[48];
     snprintf(b, sizeof(b), "Wearing: %s", hats::kHats[show - 1].name);
-    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 30, b, kGreen);
+    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 17, b, kGreen);
   } else if (show < 0) {
     char b[64];
     snprintf(b, sizeof(b), "Next: %s - %s", hats::kHats[-show - 1].name, hats::kHats[-show - 1].how);
-    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 30, b, kDim);
+    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 17, b, kDim);
   }
 }
 
@@ -840,7 +880,7 @@ void drawShare(gfx::Surface& s, const UiModel& m) {
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 12;
+const int kRows = 13;
 const int16_t kRowH = 38;
 
 struct RowInfo { const char* label; const char* sub; };
@@ -856,6 +896,7 @@ const RowInfo kRowInfo[kRows] = {
     {"Sprite pack", "from the SD card"},
     {"Touch test", "check calibration"},
     {"Share card", "show off your goblin"},
+    {"Clock", nullptr},
     {"About", nullptr},
 };
 
@@ -884,6 +925,23 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
     if (i == 11) {
+      s.text(fBody(), 16, y + 1, r.label, kText);
+      char b[48];
+      if (m.localTime) {
+        clk::Civil c = clk::fromUnix(m.localTime);
+        if (m.clockGps)
+          snprintf(b, sizeof(b), "%02u:%02u from GPS (UTC%+d:%02u)", c.hour, c.minute, st.tzMin / 60,
+                   (unsigned)(abs(st.tzMin) % 60));
+        else
+          snprintf(b, sizeof(b), "%02u:%02u set by hand, lost at power-off", c.hour, c.minute);
+      } else {
+        snprintf(b, sizeof(b), "not set: day/night and seasonal hats wait");
+      }
+      s.text(fSmall(), 16, y + 17, b, m.localTime ? kDim : kAmber);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+      continue;
+    }
+    if (i == 12) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
@@ -934,6 +992,72 @@ void drawTouchTest(gfx::Surface& s, const UiModel& m) {
     s.glow(tapX, tapY, 16, kRed, 120);
     s.hline(tapX - 12, tapY, 25, kRed);
     s.vline(tapX, tapY - 12, 25, kRed);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Set the clock: five spinners (- value +) and DONE.
+clk::Civil clockDraft = {2026, 1, 1, 12, 0};
+const int16_t kSpinW = 96, kSpinH = 56;
+void spinCell(int i, int16_t& x, int16_t& y) {  // 0 hour 1 minute 2 DONE / 3 day 4 month 5 year
+  x = 12 + (i % 3) * (kSpinW + 4);
+  y = kBodyY + 34 + (i / 3) * (kSpinH + 10);
+}
+
+void startClock(const UiModel& m) {
+  uint32_t t = m.localTime ? m.localTime : m.buildTime;
+  if (t) clockDraft = clk::fromUnix(t);
+  screen = Screen::Clock;
+  screenChangedAt = m.now;
+}
+
+void drawClock(gfx::Surface& s, const UiModel& m) {
+  header(s, "SET THE CLOCK", m.clockGps ? "GPS time: sets your UTC offset" : "no GPS: lost at power-off");
+  const char* labels[6] = {"HOUR", "MINUTE", nullptr, "DAY", "MONTH", "YEAR"};
+  unsigned vals[6] = {clockDraft.hour, clockDraft.minute, 0, clockDraft.day, clockDraft.month, clockDraft.year};
+  for (int i = 0; i < 6; i++) {
+    int16_t x, y;
+    spinCell(i, x, y);
+    if (i == 2) {
+      s.fillRoundRect(x, y + 10, kSpinW, kSpinH - 20, 14, kGreen);
+      s.textCentered(fBody(), x + kSpinW / 2, y + 17, "DONE", kBgBottom);
+      continue;
+    }
+    panel(s, x, y, kSpinW, kSpinH);
+    s.textCentered(fSmall(), x + kSpinW / 2, y + 2, labels[i], kDim);
+    char b[8];
+    snprintf(b, sizeof(b), i == 5 ? "%u" : "%02u", vals[i]);
+    s.textCentered(fBody(), x + kSpinW / 2, y + 22, b, kText);
+    s.textCentered(fBig(), x + 13, y + 16, "-", kCyan);
+    s.textCentered(fBig(), x + kSpinW - 13, y + 16, "+", kCyan);
+  }
+  s.textCentered(fSmall(), W / 2, kBodyY + 166, "for day/night, night naps and seasonal hats", kDim);
+}
+
+void tapClock(int16_t x, int16_t y, uint32_t now) {
+  for (int i = 0; i < 6; i++) {
+    int16_t cx, cy;
+    spinCell(i, cx, cy);
+    if (x < cx || x >= cx + kSpinW || y < cy || y >= cy + kSpinH) continue;
+    if (i == 2) {
+      if (hooks.setClock) hooks.setClock(clk::toUnix(clockDraft));
+      goTo(Screen::Setup, now);
+      say("Time noted!", now, 2500);
+      return;
+    }
+    int d = x < cx + kSpinW / 2 ? -1 : 1;
+    clk::Civil& c = clockDraft;
+    auto wrapAdd = [](int v, int dd, int lo, int hi) { v += dd; return v < lo ? hi : (v > hi ? lo : v); };
+    switch (i) {
+      case 0: c.hour = (uint8_t)wrapAdd(c.hour, d, 0, 23); break;
+      case 1: c.minute = (uint8_t)wrapAdd(c.minute, d, 0, 59); break;
+      case 3: c.day = (uint8_t)wrapAdd(c.day, d, 1, clk::daysInMonth(c.year, c.month)); break;
+      case 4: c.month = (uint8_t)wrapAdd(c.month, d, 1, 12); break;
+      case 5: c.year = (uint16_t)wrapAdd(c.year, d, 2024, 2099); break;
+    }
+    uint8_t dim = clk::daysInMonth(c.year, c.month);
+    if (c.day > dim) c.day = dim;
+    return;
   }
 }
 
@@ -1521,7 +1645,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         for (int i = 0; i <= hats::kCount; i++) {
           int16_t cx, cy;
           hatCell(i, cx, cy);
-          if (abs(x - cx) > 21 || abs(y - cy) > 26) continue;
+          if (abs(x - cx) > 21 || abs(y - cy) > 23) continue;
           if (i > 0 && !(m.hatMask & (1u << (i - 1)))) { sfx(kSfxTap); return; }
           m.settings->hat = (uint8_t)i;
           companion.react(CState::Excited, 1200, now);
@@ -1564,6 +1688,8 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         screen = Screen::Share;
         screenChangedAt = now;
       } else if (row == 11) {
+        startClock(m);
+      } else if (row == 12) {
         startNaming(Screen::Setup, m.myName);
       } else {
         toggleSetting(row, m);
@@ -1571,6 +1697,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
       break;
     }
     case Screen::TouchTest: tapX = x; tapY = y; break;
+    case Screen::Clock: tapClock(x, y, now); break;
     default: break;
   }
 }
@@ -1845,6 +1972,7 @@ void render(gfx::Surface& s, const UiModel& m) {
     case Screen::Share: drawShare(s, m); break;
     case Screen::Setup: drawSetup(s, m); break;
     case Screen::TouchTest: drawTouchTest(s, m); break;
+    case Screen::Clock: drawClock(s, m); break;
     case Screen::Disclaimer:
     case Screen::Naming: break;  // drawn full-screen above
   }

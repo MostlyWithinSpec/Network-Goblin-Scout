@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 #include "core/Achievements.h"
+#include "core/Clock.h"
 #include "core/Hats.h"
 #include "core/Quests.h"
 #include "core/Trackers.h"
@@ -178,7 +179,9 @@ int main() {
   ui::debugShow(2, 0); run(600); save("10_stats_spectrum");
   ui::debugShow(2, 1); run(600); save("11_stats_records");
   ui::debugShow(3, 0); run(600); save("12_loot_quests");
+  model.hatMask = 0x1FFFF;  // all hats, to see the art
   ui::debugShow(3, 1); run(600); save("13_loot_wardrobe");
+  model.hatMask = hats::unlockedMask(stats, model.level) | 0x1FF;
   ui::debugShow(3, 2); run(600); save("14_loot_trophies");
   ui::debugBadge(0); run(300); save("15_badge_detail");
   ui::debugBadge(-1);
@@ -216,6 +219,17 @@ int main() {
     run(1700); save("24_sniff_result");
     run(3000);
   }
+  // day/night: dusk on Home, then night (the goblin naps; stars come out), then set the clock
+  model.buildTime = clk::toUnix({2026, 10, 5, 13, 29});
+  model.localTime = clk::toUnix({2026, 10, 31, 19, 15});
+  ui::debugShow(0, 0); run(1500); save("25_home_dusk");
+  model.localTime = clk::toUnix({2026, 10, 31, 23, 40});
+  ui::pet().setBase(CState::Sleeping);
+  run(1500); save("26_home_night");
+  ui::pet().setBase(CState::Idle);
+  model.localTime = 0;
+  ui::debugShow(4, 400); run(600); save("27_setup_clock_row");
+  ui::debugShow(9, 0); run(600); save("28_set_clock");
   printf("rendered\n");
   return 0;
 }

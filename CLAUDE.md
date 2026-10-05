@@ -38,6 +38,7 @@ g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/t && /tmp/t      
 g++ -std=c++17 -Wall -Wextra -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp \
     src/core/Hats.cpp -o /tmp/t && /tmp/t                                           # quests + hats
 g++ -std=c++17 -Wall -Wextra -I src test/test_trackers.cpp src/core/Trackers.cpp -o /tmp/t && /tmp/t  # tracker alert
+g++ -std=c++17 -Wall -Wextra -I src test/test_clock.cpp -o /tmp/t && /tmp/t        # date maths
 sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
 python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
 ```

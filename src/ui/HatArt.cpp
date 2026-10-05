@@ -166,6 +166,50 @@ void drawHat(gfx::Surface& s, uint8_t id, float cx, float brimY, float sc, uint3
       p.rect(8 - wob, -20, 4, 1.5f, kInk);
       break;
     }
+    case 14: {  // Heart Band: two hearts bobbing on springs
+      p.rrect(-15, -1, 30, 4, 2, hex(0xFF4F8B));
+      for (int side = -1; side <= 1; side += 2) {
+        float bob = sinf(t * 5 + side) * 2;
+        float hx = side * 8, hy = -18 + bob;
+        p.line(side * 6, -1, hx, hy + 3, hex(0x9AA5AE));
+        uint16_t c = hex(0xFF3D6E);
+        p.circle(hx - 2.4f, hy - 1, 2.8f, c);
+        p.circle(hx + 2.4f, hy - 1, 2.8f, c);
+        p.tri(hx - 5.1f, hy, hx + 5.1f, hy, hx, hy + 6, c);
+      }
+      break;
+    }
+    case 15: {  // Bunny Ears
+      float wob = sinf(t * 3) * 1.5f;
+      uint16_t w = hex(0xF4F1EC), pink = hex(0xFFB3C8);
+      p.rrect(-11 + wob * 0.3f, -30, 8, 31, 4, w);
+      p.rrect(3 - wob * 0.3f, -28, 8, 29, 4, w);
+      p.rrect(-9 + wob * 0.3f, -26, 4, 22, 2, pink);
+      p.rrect(5 - wob * 0.3f, -24, 4, 20, 2, pink);
+      p.rrect(-14, -1, 28, 4, 2, hex(0xD5DADF));
+      break;
+    }
+    case 16: {  // Witch Hat
+      uint16_t c = hex(0x2A1F3D), band = hex(0xFF8A1F);
+      p.tri(-11, -2, 11, -2, 6, -30, c);
+      p.tri(6, -30, 10, -27, 16, -33, c);  // bent tip
+      p.rect(-10, -7, 20, 5, band);
+      p.rect(-3, -7, 5, 5, hex(0xFFD54A));
+      p.rect(-2, -6, 3, 3, c);
+      p.rrect(-22, -2, 44, 5, 2, c);
+      float tw = 0.5f + 0.5f * sinf(t * 4);
+      s.glow(p.X(16), p.Y(-33), p.R(4), hex(0xB46CFF), (uint8_t)(150 * tw));
+      break;
+    }
+    case 17: {  // Santa Hat
+      uint16_t red = hex(0xD8263A), fur = hex(0xF7F7F7);
+      float sway = sinf(t * 2) * 1.5f;
+      p.tri(-13, 0, 13, 0, 14 + sway, -22, red);
+      p.tri(4, -14, 14 + sway, -22, 20 + sway, -8, red);  // floppy end
+      p.circle(20 + sway, -7, 4, fur);
+      p.rrect(-16, -3, 32, 7, 3, fur);
+      break;
+    }
     default: break;
   }
 }

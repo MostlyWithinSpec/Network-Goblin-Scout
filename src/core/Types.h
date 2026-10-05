@@ -54,7 +54,8 @@ struct Sighting {
   X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
-  X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)
+  X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
+  X(nightMin) X(seasonMask)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -99,6 +100,7 @@ struct Settings {
   uint32_t goblinId = 0;        // copy of the NVS identity: survives a factory flash (which wipes NVS)
   String goblinName = "";       // chosen by the owner at first boot ("" = not named yet)
   bool agreed = false;          // first-run disclaimer accepted
+  int16_t tzMin = 0;            // local time = GPS UTC + this (set from Setup > Clock)
   String spritePack = "goblin";
 };
 

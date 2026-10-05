@@ -58,7 +58,17 @@ int main() {
   ui::debugShow(1, 0);
   for (auto& b : blips) b.lastSeenMs = now;
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
-  bench_mark(5);
+  bench_mark(5);  // home at night (stars), 3 frames, after one frame to re-bake the background
+  ui::debugShow(0, 0);
+  model.localTime = 23u * 3600 + 30 * 60;  // 1970-01-01 23:30 is as good a night as any
+  now += 40; model.now = now; ui::render(surf, model);
+  bench_mark(6);
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(7);  // sniff-off overlay, 3 frames
+  ui::onEvent(ev(EventType::SniffOff, 2u | 4u << 8 | 2u << 16 | 60u << 24), now);
+  now += 2500;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(8);
   bench_done();
   return 0;
 }

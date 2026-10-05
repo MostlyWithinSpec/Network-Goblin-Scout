@@ -9,6 +9,7 @@
 #include "Achievements.h"
 #include "Hats.h"
 #include "Quests.h"
+#include "Clock.h"
 #include "../social/Sniff.h"
 #include "config.h"
 
@@ -560,6 +561,11 @@ void Engine::tick() {
     lastMinuteMs_ += 60000;
     stats_.uptimeMin++;
     if (onBattery_) stats_.batteryMin++;
+    if (localTime_) {
+      clk::Civil c = clk::fromUnix(localTime_);
+      if (clk::phase(c.hour) == clk::kNight) stats_.nightMin++;
+      stats_.seasonMask |= hats::seasonBit(c.month);  // hat unlocks in checkAchievements below
+    }
     feed(HUNGER_PER_MIN, BOREDOM_PER_MIN);  // the goblin gets hungry and bored over time
     if (!board_.active && stats_.uptimeMin >= board_.nextAtMin) {
       quests::deal(stats_, level(), esp_random(), board_);
@@ -622,6 +628,7 @@ void Engine::saveNow() {
   set["name"] = settings_.goblinName;
   set["agreed"] = settings_.agreed;
   set["sprites"] = settings_.spritePack;
+  set["tz"] = settings_.tzMin;
 
   String out;
   serializeJsonPretty(doc, out);
@@ -698,5 +705,6 @@ void Engine::loadState() {
     settings_.goblinName = set["name"] | "";
     settings_.agreed = set["agreed"] | false;
     settings_.spritePack = set["sprites"] | "goblin";
+    settings_.tzMin = set["tz"] | 0;
   }
 }

@@ -7,6 +7,7 @@
 #include "board.h"
 #include "config.h"
 #include "core/Achievements.h"
+#include "core/Clock.h"
 #include "core/Engine.h"
 #include "diag/Diagnostics.h"
 #include "hal/Battery.h"
@@ -88,6 +89,51 @@ void onSfx(ui::Sfx s) {
   }
 }
 
+// ---- Wall clock ------------------------------------------------------------
+// No RTC on this board: GPS time (UTC + the owner's offset) when there is a fix, else a
+// time set by hand in Setup that runs from millis() until power-off.
+uint32_t manualLocal = 0, manualAtMs = 0;
+
+bool gpsClock() { return engine.settings().gps && gps::timeValid() && gps::unixTime(); }
+
+uint32_t localNow() {
+  if (gpsClock()) return gps::unixTime() + (int32_t)engine.settings().tzMin * 60;
+  if (manualLocal) return manualLocal + (millis() - manualAtMs) / 1000;
+  return 0;
+}
+
+// With GPS time, what the owner sets is really their UTC offset (rounded to 15 min).
+void setTzFrom(uint32_t local) {
+  int32_t d = (int32_t)(local - gps::unixTime()) / 60;
+  d = (d >= 0 ? d + 7 : d - 7) / 15 * 15;
+  if (d < -12 * 60 || d > 14 * 60) return;
+  engine.settings().tzMin = (int16_t)d;
+  engine.settingsChanged();
+}
+
+void onSetClock(uint32_t local) {
+  if (gpsClock()) {
+    setTzFrom(local);
+  } else {
+    manualLocal = local;
+    manualAtMs = millis();
+  }
+}
+
+// Build time ("Oct  5 2026" + "13:29:00") as a starting point for the clock screen.
+uint32_t buildTime() {
+  static const char kMon[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  char m[4] = {__DATE__[0], __DATE__[1], __DATE__[2], 0};
+  const char* f = strstr(kMon, m);
+  clk::Civil c;
+  c.month = f ? (uint8_t)((f - kMon) / 3 + 1) : 1;
+  c.day = (uint8_t)atoi(__DATE__ + 4);
+  c.year = (uint16_t)atoi(__DATE__ + 7);
+  c.hour = (uint8_t)atoi(__TIME__);
+  c.minute = (uint8_t)atoi(__TIME__ + 3);
+  return clk::toUnix(c);
+}
+
 void onBeacon(bool on) {
   if (on) peer::startBeacon(engine.level());
   else peer::stopBeacon();
@@ -135,6 +181,7 @@ ui::Hooks makeHooks() {
     engine.settingsChanged();
   };
   h.trackerMine = [] { engine.trackerIsMine(); };
+  h.setClock = onSetClock;
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -177,6 +224,9 @@ void fillModel(uint32_t now) {
   model.hatMask = engine.hatMask();
   model.blips = engine.blips(model.blipCount);
   model.shareUrl = NG_SHARE_URL;
+  model.localTime = localNow();
+  model.clockGps = gpsClock();
+  model.buildTime = buildTime();
 }
 
 void handleEvents(uint32_t now) {
@@ -309,13 +359,22 @@ void loop() {
   if (now - lastGeoMs > 1000) {
     lastGeoMs = now;
     engine.updateLocation();
+    // GPS time arrived after the clock was set by hand: keep the owner's time, learn the offset.
+    if (manualLocal && gpsClock()) {
+      setTzFrom(manualLocal + (millis() - manualAtMs) / 1000);
+      manualLocal = 0;
+    }
+    engine.setLocalTime(localNow());
   }
 
   handleEvents(now);
   handleInput();
   fx::update();
 
-  ui::pet().setBase(display::asleep() ? CState::Sleeping : scans.busy() ? CState::Scanning : CState::Idle);
+  // Naps from 23:00 to 06:00 when the time is known (scanning carries on; finds still wake it briefly).
+  uint32_t local = localNow();
+  bool nap = local && clk::napTime(clk::fromUnix(local).hour);
+  ui::pet().setBase(display::asleep() || nap ? CState::Sleeping : scans.busy() ? CState::Scanning : CState::Idle);
 
   if (now - lastFrameMs >= UI_FRAME_MS) {
     lastFrameMs = now;

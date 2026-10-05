@@ -151,6 +151,20 @@ const AchievementDef ACHIEVEMENTS[] = {
     A("jackpot", "Jackpot", "Have exactly 777 networks", kSilver, Lock, true, s.wifiUnique == 777),
     A("leet", "1337 h4x0r", "Have exactly 1,337 networks", kGold, Lock, true, s.wifiUnique == 1337),
     A("nice_signal", "Nice", "Strongest signal exactly -69 dBm", kBronze, Lock, true, s.bestRssi == -69),
+
+    // ---- v0.4: battery, trackers, sniff-offs, day/night, seasons (ids 110-121) --------
+    A("unplugged", "Unplugged", "An hour on battery power", kBronze, Signal, false, s.batteryMin >= 60),
+    A("road_warrior", "Road Warrior", "10 hours on battery power", kSilver, Map, false, s.batteryMin >= 600),
+    A("tag_spotter", "Tag Spotter", "Hear an item tracker (AirTag, Tile...)", kBronze, Ble, false, s.trackersSeen >= 1),
+    A("tag_collector", "Tag Collector", "Hear 100 item trackers", kSilver, Ble, false, s.trackersSeen >= 100),
+    A("watchful", "Watchful Goblin", "Get a tracker alert", kSilver, Star, false, s.trackerAlerts >= 1),
+    A("first_sniff", "First Sniff", "Have a sniff-off with another goblin", kBronze, Goblin, false, s.sniffOffs >= 1),
+    A("top_nose", "Top Nose", "Win 10 sniff-offs", kSilver, Goblin, false, s.sniffWins >= 10),
+    A("hoard_champion", "Hoard Champion", "Win 50 sniff-offs", kGold, Goblin, false, s.sniffWins >= 50),
+    A("night_owl", "Night Owl", "Scout for an hour after 9 pm", kBronze, Clock, false, s.nightMin >= 60),
+    A("insomniac", "Insomniac", "20 hours of night scouting", kSilver, Clock, true, s.nightMin >= 1200),
+    A("festive", "Festive", "Earn a seasonal hat", kBronze, Star, false, s.seasonMask != 0),
+    A("four_seasons", "Four Seasons", "Earn all four seasonal hats", kGold, Star, false, s.seasonMask == 15),
 };
 
 #undef A

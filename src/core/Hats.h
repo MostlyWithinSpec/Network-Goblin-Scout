@@ -17,4 +17,5 @@ extern const uint8_t kCount;
 
 bool unlocked(uint8_t id, const Stats& s, uint16_t level);  // id 0 is always "unlocked"
 uint32_t unlockedMask(const Stats& s, uint16_t level);      // bit (id - 1)
+uint32_t seasonBit(uint8_t month);  // Stats::seasonMask bit earned in this month (0 = none)
 }  // namespace hats

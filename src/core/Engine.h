@@ -15,6 +15,8 @@ class Engine {
   void saveNow();
   void pet();                                        // the user tapped the goblin
   void setOnBattery(bool b) { onBattery_ = b; }      // counts battery minutes
+  // Local wall-clock time if known (localUnix 0 = unknown): night minutes, seasonal hats.
+  void setLocalTime(uint32_t localUnix) { localTime_ = localUnix; }
   void trackerIsMine();                              // last tracker alert was the owner's own
   size_t trackersNearby() const { return watch_.nearby(millis()); }
   uint8_t hoardTier() const;                         // for the beacon (sniff-offs)
@@ -43,6 +45,7 @@ class Engine {
   bool dayChecked_ = false;
   bool saveSoon_ = false;
   bool onBattery_ = false;
+  uint32_t localTime_ = 0;
   uint32_t lastSaveMs_ = 0;
   uint32_t lastMinuteMs_ = 0;
   uint32_t bonusAcc_ = 0;      // happy-goblin XP bonus, in quarter points

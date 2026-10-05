@@ -18,6 +18,11 @@ const Def kHats[] = {
     H("Chef Hat", "Pet your goblin 100 times", s.pets >= 100),                   // 11
     H("Tinfoil Hat", "Detect 50 hidden networks", s.wifiHidden >= 50),           // 12
     H("Bee Antennae", "Find a Zigbee network", s.zigbeePans >= 1),               // 13
+    // Seasonal: earned by being out in that month (needs the clock: GPS or Setup > Clock).
+    H("Heart Band", "Be out scouting in February", s.seasonMask & 1),           // 14
+    H("Bunny Ears", "Be out scouting in April", s.seasonMask & 2),              // 15
+    H("Witch Hat", "Be out scouting in October", s.seasonMask & 4),             // 16
+    H("Santa Hat", "Be out scouting in December", s.seasonMask & 8),            // 17
 };
 
 #undef H
@@ -29,6 +34,16 @@ bool unlocked(uint8_t id, const Stats& s, uint16_t level) {
   if (id == 0) return true;
   if (id > kCount) return false;
   return kHats[id - 1].unlocked(s, level);
+}
+
+uint32_t seasonBit(uint8_t month) {
+  switch (month) {
+    case 2: return 1;
+    case 4: return 2;
+    case 10: return 4;
+    case 12: return 8;
+    default: return 0;
+  }
 }
 
 uint32_t unlockedMask(const Stats& s, uint16_t level) {

@@ -80,6 +80,7 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_peer.cpp -o tpeer && ./tpeer
           g++ -std=c++17 -Wall -Wextra -Werror -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp src/core/Hats.cpp -o tq && ./tq
           g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -I src test/test_trackers.cpp src/core/Trackers.cpp -o ttrk && ./ttrk
+          g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -I src test/test_clock.cpp -o tclk && ./tclk
 
       # The same UI code with AddressSanitizer: a buffer overflow that the PC shrugs off can
       # reset the board (v0.3.1 boot loop), so any memory error here fails the build.
