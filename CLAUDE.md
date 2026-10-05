@@ -210,4 +210,7 @@ nearby names or type it; keyboard has a symbols layer), Sync now -> scans pause,
 POSTs to `NG_SYNC_URL` over HTTPS (ESP-IDF CA bundle), HMAC-SHA256 with a device secret (NVS + /scout/sync.key),
 monotonic seq. Server: network-goblin-labs `api/` (Worker + D1, smoke-tested locally with wrangler).
 Leaderboard: scout.networkgoblin.dev/leaderboard. `first_sync` achievement (123 total).
+Server deployed by the owner as Cloudflare Worker `goblin-sync` (Workers Builds, root `api`, D1 `goblin-sync`),
+route scout.networkgoblin.dev/api/*: owner confirmed it answers. First real device sync: awaiting report.
+The web flasher still serves v0.4.0; move it to v0.5.x once a device sync is confirmed.
 Next: account pairing (QR) and encounter cross-checks (docs/sync-plan.md).
