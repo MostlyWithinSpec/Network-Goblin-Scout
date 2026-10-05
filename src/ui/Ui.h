@@ -7,7 +7,9 @@
 // main.cpp to do anything hardware-related through Hooks (so it also runs on a PC).
 namespace ui {
 
-enum Sfx : uint8_t { kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet };
+enum Sfx : uint8_t {
+  kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet, kSfxBabble, kSfxQuest
+};
 
 struct Hooks {
   void (*brightness)(uint8_t pct) = nullptr;
@@ -19,6 +21,7 @@ struct Hooks {
   bool (*nextPack)() = nullptr;          // cycle SD sprite packs; false if there are none
   void (*settingsChanged)() = nullptr;   // persist settings
   void (*pet)() = nullptr;               // goblin was petted
+  void (*hat)(uint8_t id) = nullptr;     // hat equipped (0 = none)
   void (*sfx)(Sfx s) = nullptr;
   void (*led)(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) = nullptr;
   uint32_t (*micros)() = nullptr;        // optional: enables profile()

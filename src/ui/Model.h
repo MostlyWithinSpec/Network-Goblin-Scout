@@ -29,6 +29,20 @@ struct UiModel {
   const Frame* (*packFrame)(CState s, uint32_t tick) = nullptr;
   const char* packName = "goblin";
 
+  // needs, quests, cosmetics
+  Mood mood = Mood::Content;
+  uint16_t hunger = 0, boredom = 0;   // 0..1000
+  const QuestBoard* quests = nullptr;
+  uint32_t uptimeMin = 0;             // for "new quests in N min"
+  uint32_t hatMask = 0;               // unlocked hats, bit (id - 1)
+
+  // radar
+  const Blip* blips = nullptr;
+  size_t blipCount = 0;
+
+  // share card QR code target
+  const char* shareUrl = "";
+
   // touch test
   uint16_t rawX = 0, rawY = 0, rawZ = 0;
   const char* fwVersion = "";

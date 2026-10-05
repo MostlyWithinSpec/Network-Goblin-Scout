@@ -78,7 +78,7 @@ mu.hook_add(UC_HOOK_BLOCK, on_block)
 mu.hook_add(UC_HOOK_CODE, on_mark, begin=syms["bench_mark"], end=syms["bench_mark"])
 mu.hook_add(UC_HOOK_CODE, on_done, begin=syms["bench_done"], end=syms["bench_done"])
 mu.emu_start(syms["_start"], 0)
-names = ["home idle", "home scanning", "level-up overlay"]  # in bench.cpp order
+names = ["home idle", "home scanning", "level-up overlay", "radar"]  # in bench.cpp order
 for i, ((_, ta), (_, tb)) in enumerate(zip(marks, marks[1:])):
     per = (tb - ta) / 3
     print(f"{names[i]:18s} {per / 1e6:7.2f} M instructions/frame  (~{per / 240e3:5.1f} ms at 1 instr/cycle, 240 MHz)")

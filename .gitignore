@@ -3,3 +3,4 @@
 *.tmp
 tools/preview/out/
 tools/bench/*.elf
+tools/bench/*.o

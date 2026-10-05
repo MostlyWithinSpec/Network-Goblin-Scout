@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <vector>
 #include "core/Achievements.h"
+#include "core/Hats.h"
+#include "core/Quests.h"
 #include "ui/Ui.h"
 
 static uint16_t fb[320 * 240], bg[320 * 240];
@@ -12,6 +14,8 @@ static Settings settings;
 static UiModel model;
 static uint32_t now = 1000;
 static NearbyPeer peer;
+static QuestBoard board;
+static Blip blips[48];
 
 static void save(const char* name) {
   char path[128];
@@ -72,7 +76,33 @@ int main() {
   model.myName = "Snagpacket";
   model.myId = 0x5A1D2B3C;
   model.beaconOn = true;
-  model.fwVersion = "0.2.0";
+  model.fwVersion = "0.3.0";
+  stats.questsDone = 4;
+  stats.hunger = 380;
+  stats.boredom = 610;
+  settings.hat = 8;  // crown
+  model.mood = Mood::Content;
+  model.hunger = (uint16_t)stats.hunger;
+  model.boredom = (uint16_t)stats.boredom;
+  quests::deal(stats, model.level, 7, board);
+  board.q[0].base -= 3;                       // some progress
+  board.q[1].base -= board.q[1].target;       // one finished
+  board.q[1].done = true;
+  model.quests = &board;
+  model.uptimeMin = 900;
+  model.hatMask = hats::unlockedMask(stats, model.level) | 0x1FF;
+  model.shareUrl = "https://github.com/MostlyWithinSpec/Network-Goblin-Scout";
+  uint32_t seed = 99;
+  for (auto& b : blips) {
+    seed = seed * 1103515245 + 12345;
+    b.angle = (seed >> 8) & 4095;
+    b.rssi = (int8_t)(-35 - (int)((seed >> 20) % 60));
+    int r = (seed >> 4) % 10;
+    b.radio = r < 5 ? Radio::WiFi : r < 8 ? Radio::BLE : r < 9 ? Radio::Thread : Radio::Peer;
+    b.lastSeenMs = 1000;
+  }
+  model.blips = blips;
+  model.blipCount = 48;
   peer.id = 1; strcpy(peer.name, "Grimwick"); peer.level = 12; peer.hue = 200;
 
   ui::begin(ui::Hooks(), bg);
@@ -112,7 +142,7 @@ int main() {
   run(3000);
 
   UiEvent pe = ev(EventType::PeerNew, 12, "Met Grimwick!");
-  strcpy(pe.peerName, "Grimwick"); pe.peerLevel = 12; pe.peerHue = 200;
+  strcpy(pe.peerName, "Grimwick"); pe.peerLevel = 12; pe.peerHue = 200; pe.peerHat = 9;
   ui::onEvent(pe, now);
   run(2200);
   save("07_encounter");
@@ -122,20 +152,27 @@ int main() {
   run(400);
   save("08_home_pet");
 
-  ui::debugShow(1, 0); run(600); save("09_stats_spectrum");
-  ui::debugShow(1, 1); run(600); save("10_stats_records");
-  ui::debugShow(2, 0); run(600); save("11_badges");
-  ui::debugBadge(0); run(300); save("12_badge_detail");
+  for (auto& b : blips) b.lastSeenMs = now;
+  ui::debugShow(1, 0); run(1200); save("09_radar");
+  ui::debugShow(2, 0); run(600); save("10_stats_spectrum");
+  ui::debugShow(2, 1); run(600); save("11_stats_records");
+  ui::debugShow(3, 0); run(600); save("12_loot_quests");
+  ui::debugShow(3, 1); run(600); save("13_loot_wardrobe");
+  ui::debugShow(3, 2); run(600); save("14_loot_trophies");
+  ui::debugBadge(0); run(300); save("15_badge_detail");
   ui::debugBadge(-1);
-  ui::debugShow(2, 4); run(300); save("13_badges_page5");
-  ui::debugShow(3, 0); run(600); save("14_setup");
-  ui::debugShow(3, 160); run(600); save("15_setup_scrolled");
-
+  ui::debugShow(4, 0); run(600); save("16_setup");
+  ui::debugShow(4, 200); run(600); save("17_setup_scrolled");
+  ui::debugShow(6, 0); run(600); save("18_share_card");
+  ui::onEvent(ev(EventType::HatUnlocked, 4, "New hat: Propeller Cap!"), now);
+  ui::debugShow(0, 0);
+  run(1400); save("19_new_hat");
+  run(3000);
   ui::debugShow(0, 0);
   model.scanning = nullptr;
   ui::pet().setBase(CState::Sleeping);
   run(2000);
-  save("16_home_sleeping");
+  save("20_home_sleeping");
   printf("rendered\n");
   return 0;
 }

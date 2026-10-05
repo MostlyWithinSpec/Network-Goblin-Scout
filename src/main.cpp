@@ -64,6 +64,7 @@ const fx::Note kLevelUp[] = {{1047, 90}, {1319, 90}, {1568, 90}, {2093, 260}};
 const fx::Note kAchieve[] = {{1568, 80}, {2093, 80}, {2637, 200}};
 const fx::Note kEncounter[] = {{1319, 70}, {1760, 70}, {0, 40}, {1319, 70}, {1760, 70}, {2637, 280}};
 const fx::Note kPet[] = {{2800, 25}, {3400, 40}};
+const fx::Note kQuest[] = {{1760, 60}, {2349, 60}, {2960, 160}};
 
 void onSfx(ui::Sfx s) {
   switch (s) {
@@ -74,6 +75,13 @@ void onSfx(ui::Sfx s) {
     case ui::kSfxAchievement: fx::play(kAchieve, 3); break;
     case ui::kSfxEncounter: fx::play(kEncounter, 6); break;
     case ui::kSfxPet: fx::play(kPet, 2); break;
+    case ui::kSfxQuest: fx::play(kQuest, 3); break;
+    case ui::kSfxBabble: {  // goblin "talking": a few random chirps, Animal Crossing style
+      fx::Note n[5];
+      for (auto& note : n) note = {(uint16_t)(1400 + esp_random() % 1400), (uint16_t)(35 + esp_random() % 25)};
+      fx::play(n, 5);
+      break;
+    }
   }
 }
 
@@ -112,6 +120,7 @@ ui::Hooks makeHooks() {
   h.nextPack = nextPack;
   h.settingsChanged = [] { engine.settingsChanged(); };
   h.pet = [] { engine.pet(); };
+  h.hat = peer::setHat;
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -141,6 +150,14 @@ void fillModel(uint32_t now) {
   model.packName = pack.loaded() ? engine.settings().spritePack.c_str() : "built-in";
   touch::lastRaw(model.rawX, model.rawY, model.rawZ);
   model.fwVersion = NG_FW_VERSION;
+  model.mood = engine.mood();
+  model.hunger = (uint16_t)st.hunger;
+  model.boredom = (uint16_t)st.boredom;
+  model.quests = &engine.quests();
+  model.uptimeMin = st.uptimeMin;
+  model.hatMask = engine.hatMask();
+  model.blips = engine.blips(model.blipCount);
+  model.shareUrl = NG_SHARE_URL;
 }
 
 void handleEvents(uint32_t now) {
@@ -220,6 +237,7 @@ void setup() {
 
   // Goblin identity + "I'm a goblin" beacon (needs BLE, which scans.begin() started).
   peer::begin();
+  peer::setHat(st.hat);
   if (st.beacon) peer::startBeacon(engine.level());
 
   if (!storage::ok()) ui::notice("No SD card: progress won't save", millis());
