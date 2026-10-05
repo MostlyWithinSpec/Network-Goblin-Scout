@@ -14,7 +14,7 @@ namespace {
 const char* kStatePath = "/scout/state.json";
 const char* kSaltPath = "/scout/salt.bin";
 
-uint32_t batchWifiNew = 0, batchBleNew = 0;
+uint32_t batchWifiNew = 0, batchBleNew = 0, batch154New = 0;
 
 const char* authName(AuthCat a) {
   switch (a) {
@@ -26,6 +26,8 @@ const char* authName(AuthCat a) {
     default: return "other";
   }
 }
+
+bool isDfs(uint8_t ch) { return ch >= 52 && ch <= 144; }
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -33,13 +35,20 @@ bool Engine::begin() {
   loadSalt();
   loadState();
   size_t w = wifi_.load(), s = ssids_.load(), b = ble_.load(), c = cells_.load();
-  log_i("engine: loaded %u wifi, %u ssid, %u ble, %u cells", w, s, b, c);
+  size_t t = t154_.load(), p = pans_.load(), g = peers_.load();
+  log_i("engine: loaded %u wifi, %u ssid, %u ble, %u cells, %u 802.15.4, %u pans, %u goblins", w, s, b, c, t,
+        p, g);
   // Counters are derived from the stores so the SD log is the source of truth.
-  if (w) stats_.wifiUnique = w;
-  if (s) stats_.ssidUnique = s;
-  if (b) stats_.bleUnique = b;
-  if (c) stats_.geoCells = c;
+  stats_.wifiUnique = w;
+  stats_.ssidUnique = s;
+  stats_.bleUnique = b;
+  stats_.geoCells = c;
+  stats_.t154Unique = t;
+  stats_.t154Pans = p;
+  stats_.peersMet = g;
   stats_.sessions++;
+  lastMinuteMs_ = millis();
+  checkAchievements();
   dirty_ = true;
   return true;
 }
@@ -66,87 +75,200 @@ uint64_t Engine::id(Radio r, const uint8_t* data, size_t len) const {
 
 // ---------------------------------------------------------------------------
 void Engine::process(const Sighting& s) {
-  if (s.radio == Radio::WiFi) {
-    if (s.rssi > stats_.bestRssi) { stats_.bestRssi = s.rssi; dirty_ = true; }
-
-    if (s.channel && s.channel < 200 && !stats_.channels[s.channel]) {
-      stats_.channels.set(s.channel);
-      addXp(XP_NEW_CHANNEL);
-      char t[40];
-      snprintf(t, sizeof(t), "New channel %u!", s.channel);
-      push(EventType::NewChannel, s.channel, t);
-    }
-
-    uint64_t ssidId = 0;
-    size_t nameLen = strnlen(s.name, 32);
-    if (nameLen) {
-      ssidId = id(Radio::WiFi, (const uint8_t*)s.name, nameLen) ^ 0x5353494400000000ULL;
-      if (ssids_.add(ssidId, "")) stats_.ssidUnique++;
-    }
-
-    uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
-    char extra[96];
-    uint32_t now = gps::unixTime();
-    if (gps::hasFix())
-      snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu,%.5f,%.5f", (unsigned long long)ssidId,
-               s.channel, authName(s.auth), s.rssi, (unsigned long)now, gps::lat(), gps::lon());
-    else
-      snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu,,", (unsigned long long)ssidId, s.channel,
-               authName(s.auth), s.rssi, (unsigned long)now);
-
-    if (wifi_.add(bssidId, extra)) {
-      stats_.wifiUnique++;
-      stats_.sessWifiNew++;
-      batchWifiNew++;
-      if (s.channel > 14) stats_.wifi5g++;
-      switch (s.auth) {
-        case AuthCat::Open: stats_.wifiOpen++; break;
-        case AuthCat::WPA3: stats_.wifiWpa3++; break;
-        case AuthCat::Enterprise: stats_.wifiEnterprise++; break;
-        default: break;
-      }
-      addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK);
-    }
-  } else if (s.radio == Radio::BLE) {
-    stats_.bleSightings++;
-    // Phones rotate private addresses every few minutes; only stable addresses
-    // count as "unique devices", otherwise the counter is meaningless (and farmable).
-    if (!s.stableAddr) return;
-    uint64_t bleId = id(Radio::BLE, s.mac, 6);
-    char extra[32];
-    snprintf(extra, sizeof(extra), "%d,%lu", s.rssi, (unsigned long)gps::unixTime());
-    if (ble_.add(bleId, extra)) {
-      stats_.bleUnique++;
-      stats_.sessBleNew++;
-      batchBleNew++;
-      addXp(XP_NEW_BLE);
-    }
+  switch (s.radio) {
+    case Radio::WiFi: processWifi(s); break;
+    case Radio::BLE: processBle(s); break;
+    case Radio::Thread: process154(s); break;
+    case Radio::Peer: processPeer(s); break;
   }
   dirty_ = true;
 }
 
+void Engine::processWifi(const Sighting& s) {
+  if (s.rssi > stats_.bestRssi) stats_.bestRssi = s.rssi;
+  if (s.rssi < 0 && (stats_.worstRssi == 0 || s.rssi < stats_.worstRssi)) stats_.worstRssi = s.rssi;
+
+  if (s.channel && s.channel < 200 && !stats_.channels[s.channel]) {
+    stats_.channels.set(s.channel);
+    addXp(XP_NEW_CHANNEL);
+    char t[40];
+    snprintf(t, sizeof(t), "New channel %u!", s.channel);
+    push(EventType::NewChannel, s.channel, t);
+  }
+
+  uint64_t ssidId = 0;
+  size_t nameLen = strnlen(s.name, 32);
+  if (nameLen) {
+    ssidId = id(Radio::WiFi, (const uint8_t*)s.name, nameLen) ^ 0x5353494400000000ULL;
+    if (ssids_.add(ssidId, "")) stats_.ssidUnique++;
+  }
+
+  uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
+  char extra[96];
+  uint32_t now = gps::unixTime();
+  if (gps::hasFix())
+    snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu,%.5f,%.5f", (unsigned long long)ssidId, s.channel,
+             authName(s.auth), s.rssi, (unsigned long)now, gps::lat(), gps::lon());
+  else
+    snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu,,", (unsigned long long)ssidId, s.channel,
+             authName(s.auth), s.rssi, (unsigned long)now);
+
+  if (!wifi_.add(bssidId, extra)) return;
+  stats_.wifiUnique++;
+  stats_.sessWifiNew++;
+  batchWifiNew++;
+  if (s.channel > 14) stats_.wifi5g++;
+  if (isDfs(s.channel)) stats_.wifiDfs++;
+  if (s.flags & sflag::kWifi6) stats_.wifi6++;
+  if (s.flags & sflag::kWps) stats_.wifiWps++;
+  if (s.flags & sflag::kHidden) stats_.wifiHidden++;
+  switch (s.auth) {
+    case AuthCat::Open: stats_.wifiOpen++; break;
+    case AuthCat::WEP: stats_.wifiWep++; break;
+    case AuthCat::WPA3: stats_.wifiWpa3++; break;
+    case AuthCat::Enterprise: stats_.wifiEnterprise++; break;
+    default: break;
+  }
+  addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK);
+}
+
+void Engine::processBle(const Sighting& s) {
+  stats_.bleSightings++;
+  // Phones rotate private addresses every few minutes; only stable addresses
+  // count as "unique devices", otherwise the counter is meaningless (and farmable).
+  if (!s.stableAddr) return;
+  uint64_t bleId = id(Radio::BLE, s.mac, 6);
+  char extra[32];
+  snprintf(extra, sizeof(extra), "%d,%lu", s.rssi, (unsigned long)gps::unixTime());
+  if (!ble_.add(bleId, extra)) return;
+  stats_.bleUnique++;
+  stats_.sessBleNew++;
+  batchBleNew++;
+  if (s.flags & sflag::kNamed) stats_.bleNamed++;
+  if (s.flags & sflag::kIBeacon) stats_.bleIBeacon++;
+  if (s.flags & sflag::kEddystone) stats_.bleEddystone++;
+  addXp(XP_NEW_BLE);
+}
+
+void Engine::process154(const Sighting& s) {
+  stats_.t154Frames++;
+  if (s.channel >= 11 && s.channel <= 26) stats_.channels154.set(s.channel);
+  const char* kind = (s.flags & sflag::kZigbee) ? "zigbee" : (s.flags & sflag::kThread) ? "thread" : "?";
+
+  uint64_t panId = 0;
+  if (s.panId != 0xFFFF) {
+    uint8_t key[3] = {(uint8_t)s.panId, (uint8_t)(s.panId >> 8), s.channel};
+    panId = id(Radio::Thread, key, 3) ^ 0x50414E0000000000ULL;
+    char extra[24];
+    snprintf(extra, sizeof(extra), "%u,%s", s.channel, kind);
+    if (pans_.add(panId, extra)) {
+      stats_.t154Pans++;
+      addXp(XP_NEW_PAN);
+      const char* t = "New 802.15.4 network!";
+      if (s.flags & sflag::kZigbee) { stats_.zigbeePans++; t = "New Zigbee network!"; }
+      if (s.flags & sflag::kThread) { stats_.threadPans++; t = "New Thread network!"; }
+      push(EventType::New154, stats_.t154Pans, t);
+      pans_.flush();
+    }
+  }
+
+  uint64_t devId = id(Radio::Thread, s.mac, s.macLen);
+  char extra[64];
+  snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu", (unsigned long long)panId, s.channel, kind, s.rssi,
+           (unsigned long)gps::unixTime());
+  if (!t154_.add(devId, extra)) return;
+  stats_.t154Unique++;
+  stats_.sess154New++;
+  batch154New++;
+  addXp(XP_NEW_154);
+}
+
+void Engine::processPeer(const Sighting& s) {
+  uint32_t now = millis();
+  uint32_t pid;
+  memcpy(&pid, s.mac, 4);
+
+  NearbyPeer* slot = nullptr;
+  for (auto& n : nearby_)
+    if (n.id == pid) slot = &n;
+  bool encounter = !slot || now - slot->lastSeenMs > PEER_REVISIT_MS;
+  if (!slot) {  // reuse the stalest slot
+    slot = &nearby_[0];
+    for (auto& n : nearby_)
+      if (n.id == 0 || n.lastSeenMs < slot->lastSeenMs) slot = &n;
+  }
+  slot->id = pid;
+  strlcpy(slot->name, s.name, sizeof(slot->name));
+  slot->level = s.peerLevel;
+  slot->hue = s.peerHue;
+  slot->rssi = s.rssi;
+  slot->lastSeenMs = now;
+  if (!encounter) return;
+
+  stats_.peerEncounters++;
+  char extra[24];
+  snprintf(extra, sizeof(extra), "%u,%lu", s.peerLevel, (unsigned long)gps::unixTime());
+  bool isNew = peers_.add(id(Radio::Peer, s.mac, 4), extra);
+  peers_.flush();
+  if (isNew) stats_.peersMet++;
+  if (s.peerLevel > level()) stats_.metHigherLevel = 1;
+  if (s.rssi >= -45) stats_.closeEncounter = 1;
+  const NearbyPeer* tmp[kNearby];
+  uint32_t together = nearbyPeers(PEER_TOGETHER_MS, tmp, kNearby);
+  if (together > stats_.maxPeersAtOnce) stats_.maxPeersAtOnce = together;
+
+  char t[40];
+  snprintf(t, sizeof(t), isNew ? "Met %s!" : "%s is back!", slot->name);
+  push(isNew ? EventType::PeerNew : EventType::PeerReunion, s.peerLevel, t, slot);
+  addXp(isNew ? XP_NEW_PEER : XP_PEER_REUNION);
+  checkAchievements();
+}
+
+size_t Engine::nearbyPeers(uint32_t withinMs, const NearbyPeer** out, size_t max) const {
+  uint32_t now = millis();
+  size_t n = 0;
+  for (const auto& p : nearby_)
+    if (p.id && now - p.lastSeenMs <= withinMs && n < max) out[n++] = &p;
+  return n;
+}
+
 void Engine::endScan(Radio radio, uint32_t seenThisScan) {
   stats_.scans++;
+  char t[40];
   if (radio == Radio::WiFi) {
     stats_.lastScanSeen = seenThisScan;
+    if (seenThisScan > stats_.maxApsInScan) stats_.maxApsInScan = seenThisScan;
     if (batchWifiNew) {
-      char t[40];
-      snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!",
-               (unsigned long)batchWifiNew);
+      snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
       push(EventType::NewWifi, batchWifiNew, t);
     }
     batchWifiNew = 0;
   } else if (radio == Radio::BLE) {
+    stats_.lastBleSeen = seenThisScan;
+    if (seenThisScan > stats_.maxBleInScan) stats_.maxBleInScan = seenThisScan;
     if (batchBleNew) {
-      char t[40];
       snprintf(t, sizeof(t), "%lu new BLE device%s", (unsigned long)batchBleNew, batchBleNew == 1 ? "" : "s");
       push(EventType::NewBle, batchBleNew, t);
     }
     batchBleNew = 0;
+  } else if (radio == Radio::Thread) {
+    stats_.last154Seen = seenThisScan;
+    if (batch154New) {
+      snprintf(t, sizeof(t), "%lu new mesh device%s", (unsigned long)batch154New, batch154New == 1 ? "" : "s");
+      push(EventType::New154, batch154New, t);
+    }
+    batch154New = 0;
   }
   wifi_.flush();
   ssids_.flush();
   ble_.flush();
+  t154_.flush();
+  checkAchievements();
+  dirty_ = true;
+}
+
+void Engine::pet() {
+  stats_.pets++;
   checkAchievements();
   dirty_ = true;
 }
@@ -177,7 +299,7 @@ void Engine::updateLocation() {
     uint8_t key[8];
     memcpy(key, &cy, 4);
     memcpy(key + 4, &cx, 4);
-    if (cells_.add(id(Radio::Thread /* unused tag */, key, 8) ^ 0x43454C4C00000000ULL, "")) {
+    if (cells_.add(id(Radio::Thread /* historical tag, keep */, key, 8) ^ 0x43454C4C00000000ULL, "")) {
       stats_.geoCells++;
       if (stats_.geoCells > 1) {
         addXp(XP_NEW_CELL);
@@ -210,18 +332,27 @@ void Engine::checkAchievements() {
     if (stats_.achieved[i]) continue;
     if (ACHIEVEMENTS[i].check(stats_)) {
       stats_.achieved.set(i);
-      addXp(XP_ACHIEVEMENT);
+      addXp(XP_ACHIEVEMENT * (1 + ACHIEVEMENTS[i].tier));
       push(EventType::Achievement, i, ACHIEVEMENTS[i].name);
     }
   }
 }
 
-void Engine::push(EventType t, uint32_t v, const char* text) {
+void Engine::push(EventType t, uint32_t v, const char* text, const NearbyPeer* p) {
   size_t next = (qHead_ + 1) % kQueue;
   if (next == qTail_) qTail_ = (qTail_ + 1) % kQueue;  // drop oldest
-  queue_[qHead_].type = t;
-  queue_[qHead_].value = v;
-  strlcpy(queue_[qHead_].text, text, sizeof(queue_[qHead_].text));
+  UiEvent& e = queue_[qHead_];
+  e.type = t;
+  e.value = v;
+  strlcpy(e.text, text, sizeof(e.text));
+  e.peerName[0] = 0;
+  e.peerLevel = 0;
+  e.peerHue = 0;
+  if (p) {
+    strlcpy(e.peerName, p->name, sizeof(e.peerName));
+    e.peerLevel = p->level;
+    e.peerHue = p->hue;
+  }
   qHead_ = next;
 }
 
@@ -234,31 +365,34 @@ bool Engine::popEvent(UiEvent& e) {
 
 // ---------------------------------------------------------------------------
 void Engine::tick() {
-  if (dirty_ && millis() - lastSaveMs_ > STATE_SAVE_INTERVAL_MS) saveNow();
+  uint32_t now = millis();
+  if (now - lastMinuteMs_ >= 60000) {
+    lastMinuteMs_ += 60000;
+    stats_.uptimeMin++;
+    checkAchievements();
+    dirty_ = true;
+  }
+  if (dirty_ && now - lastSaveMs_ > STATE_SAVE_INTERVAL_MS) saveNow();
 }
 
 void Engine::saveNow() {
   lastSaveMs_ = millis();
   if (!storage::ok()) return;
   JsonDocument doc;
-  doc["v"] = 1;
+  doc["v"] = 2;
   doc["fw"] = NG_FW_VERSION;
-  doc["xp"] = stats_.xp;
-  doc["scans"] = stats_.scans;
-  doc["sessions"] = stats_.sessions;
-  doc["wifi5g"] = stats_.wifi5g;
-  doc["wifiOpen"] = stats_.wifiOpen;
-  doc["wifiWpa3"] = stats_.wifiWpa3;
-  doc["wifiEnterprise"] = stats_.wifiEnterprise;
+#define NG_SAVE_COUNTER(n) doc[#n] = stats_.n;
+  NG_SAVED_COUNTERS(NG_SAVE_COUNTER)
+#undef NG_SAVE_COUNTER
   doc["bestRssi"] = stats_.bestRssi;
-  doc["bleSightings"] = stats_.bleSightings;
-  doc["lastDay"] = stats_.lastDay;
-  doc["streak"] = stats_.streak;
-  doc["bestStreak"] = stats_.bestStreak;
+  doc["worstRssi"] = stats_.worstRssi;
 
   JsonArray ch = doc["channels"].to<JsonArray>();
   for (size_t i = 0; i < stats_.channels.size(); i++)
     if (stats_.channels[i]) ch.add(i);
+  JsonArray ch154 = doc["channels154"].to<JsonArray>();
+  for (size_t i = 0; i < stats_.channels154.size(); i++)
+    if (stats_.channels154[i]) ch154.add(i);
 
   JsonArray ach = doc["achievements"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
@@ -267,6 +401,8 @@ void Engine::saveNow() {
   JsonObject set = doc["settings"].to<JsonObject>();
   set["brightness"] = settings_.brightness;
   set["ble"] = settings_.bleScan;
+  set["154"] = settings_.scan154;
+  set["beacon"] = settings_.beacon;
   set["gps"] = settings_.gps;
   set["sound"] = settings_.sound;
   set["invert"] = settings_.invert;
@@ -285,22 +421,19 @@ void Engine::loadState() {
     log_w("engine: state.json unreadable, starting fresh");
     return;
   }
-  stats_.xp = doc["xp"] | 0;
-  stats_.scans = doc["scans"] | 0;
-  stats_.sessions = doc["sessions"] | 0;
-  stats_.wifi5g = doc["wifi5g"] | 0;
-  stats_.wifiOpen = doc["wifiOpen"] | 0;
-  stats_.wifiWpa3 = doc["wifiWpa3"] | 0;
-  stats_.wifiEnterprise = doc["wifiEnterprise"] | 0;
+#define NG_LOAD_COUNTER(n) stats_.n = doc[#n] | 0;
+  NG_SAVED_COUNTERS(NG_LOAD_COUNTER)
+#undef NG_LOAD_COUNTER
   stats_.bestRssi = doc["bestRssi"] | -127;
-  stats_.bleSightings = doc["bleSightings"] | 0;
-  stats_.lastDay = doc["lastDay"] | 0;
-  stats_.streak = doc["streak"] | 0;
-  stats_.bestStreak = doc["bestStreak"] | 0;
+  stats_.worstRssi = doc["worstRssi"] | 0;
 
   for (JsonVariant v : doc["channels"].as<JsonArray>()) {
     int c = v.as<int>();
     if (c > 0 && c < 200) stats_.channels.set(c);
+  }
+  for (JsonVariant v : doc["channels154"].as<JsonArray>()) {
+    int c = v.as<int>();
+    if (c >= 11 && c <= 26) stats_.channels154.set(c);
   }
   for (JsonVariant v : doc["achievements"].as<JsonArray>()) {
     const char* key = v.as<const char*>();
@@ -313,6 +446,8 @@ void Engine::loadState() {
   if (!set.isNull()) {
     settings_.brightness = set["brightness"] | 80;
     settings_.bleScan = set["ble"] | true;
+    settings_.scan154 = set["154"] | true;
+    settings_.beacon = set["beacon"] | true;
     settings_.gps = set["gps"] | true;
     settings_.sound = set["sound"] | true;
     settings_.invert = set["invert"] | false;

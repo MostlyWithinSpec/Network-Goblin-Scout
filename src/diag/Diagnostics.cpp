@@ -25,7 +25,9 @@ const uint16_t WARN = 0xFD20;
 struct RadioDiag {
   bool ready = false;
   uint32_t cycles = 0;
-  uint32_t a = 0, b = 0;  // Wi-Fi: 2.4 GHz / 5 GHz.  BLE: stable / rotating address.
+  // Wi-Fi: a 2.4 GHz, b 5 GHz.  BLE: a stable, b rotating, c goblins.
+  // 802.15.4: a Zigbee, b Thread, c unknown (frames, not devices).
+  uint32_t a = 0, b = 0, c = 0;
   int8_t best = -127;
 };
 const size_t kMaxRadios = 4;
@@ -34,12 +36,18 @@ size_t scannerCount = 0;
 RadioDiag radios[kMaxRadios];
 int current = -1;
 bool running = false;
-uint32_t cycA = 0, cycB = 0;
+uint32_t cycA = 0, cycB = 0, cycC = 0;
 int8_t cycBest = -127;
 
 void sink(const Sighting& s) {
-  bool first = (s.radio == Radio::WiFi) ? s.channel <= 14 : s.stableAddr;
-  (first ? cycA : cycB)++;
+  switch (s.radio) {
+    case Radio::WiFi: (s.channel <= 14 ? cycA : cycB)++; break;
+    case Radio::BLE: (s.stableAddr ? cycA : cycB)++; break;
+    case Radio::Peer: cycC++; break;
+    case Radio::Thread:
+      (s.flags & sflag::kZigbee ? cycA : s.flags & sflag::kThread ? cycB : cycC)++;
+      break;
+  }
   if (s.rssi > cycBest) cycBest = s.rssi;
 }
 
@@ -49,7 +57,7 @@ void tickScanners() {
     for (size_t tries = 0; tries < scannerCount; tries++) {
       current = (current + 1) % (int)scannerCount;
       if (!radios[current].ready) continue;
-      cycA = cycB = 0;
+      cycA = cycB = cycC = 0;
       cycBest = -127;
       scanners[current]->start();
       running = true;
@@ -63,6 +71,7 @@ void tickScanners() {
     r.cycles++;
     r.a = cycA;
     r.b = cycB;
+    r.c = cycC;
     r.best = cycBest;
     running = false;
   }
@@ -190,16 +199,22 @@ void add(uint16_t color, const char* fmt, ...) {
 
 void addRadio(size_t i) {
   const RadioDiag& r = radios[i];
-  bool wifi = scanners[i]->radio() == Radio::WiFi;
-  const char* name = wifi ? "WIFI " : "BLE  ";
+  Radio radio = scanners[i]->radio();
+  const char* name = radio == Radio::WiFi ? "WIFI " : radio == Radio::BLE ? "BLE  " : "15.4 ";
+  uint32_t total = r.a + r.b + r.c;
   if (!r.ready) { add(BAD, "%s init FAILED", name); add(DIM, " "); return; }
   if (!r.cycles) { add(WARN, "%s first scan running...", name); add(DIM, " "); return; }
-  add(r.a + r.b ? GOOD : WARN, "%s scans %lu  last %lu seen  best %d dBm", name, (unsigned long)r.cycles,
-      (unsigned long)(r.a + r.b), r.a + r.b ? r.best : 0);
-  if (wifi)
+  // No 802.15.4 traffic is normal in a home without Zigbee/Thread gear, so it's not a warning.
+  add(total ? GOOD : radio == Radio::Thread ? TEXT : WARN, "%s scans %lu  last %lu seen  best %d dBm", name,
+      (unsigned long)r.cycles, (unsigned long)total, total ? r.best : 0);
+  if (radio == Radio::WiFi)
     add(TEXT, "      2.4 GHz %lu   5 GHz %lu", (unsigned long)r.a, (unsigned long)r.b);
+  else if (radio == Radio::BLE)
+    add(TEXT, "      stable %lu  rotating %lu  goblins %lu", (unsigned long)r.a, (unsigned long)r.b,
+        (unsigned long)r.c);
   else
-    add(TEXT, "      stable %lu   rotating %lu", (unsigned long)r.a, (unsigned long)r.b);
+    add(TEXT, "      frames: zigbee %lu thread %lu other %lu", (unsigned long)r.a, (unsigned long)r.b,
+        (unsigned long)r.c);
 }
 
 void build() {

@@ -27,6 +27,7 @@
 // ---- Scanning -------------------------------------------------------------
 #define WIFI_SCAN_MS_PER_CHAN   120        // passive dwell per channel
 #define BLE_SCAN_SECONDS        4
+#define IEEE802154_DWELL_MS     250        // per channel, 16 channels (11-26) = 4 s per sweep
 #define SCAN_REST_MS            1500
 
 // ---- Persistence ----------------------------------------------------------
@@ -43,7 +44,15 @@
 #define XP_NEW_CELL             20
 #define XP_DAILY_BONUS          50
 #define XP_NEW_BLE              1
-#define XP_ACHIEVEMENT          25
+#define XP_ACHIEVEMENT          25         // x (1 + tier): bronze 25 ... legendary 100
+#define XP_NEW_154              2          // new 802.15.4 device
+#define XP_NEW_PAN              15         // new Zigbee/Thread network
+#define XP_NEW_PEER             100        // met a new goblin
+#define XP_PEER_REUNION         25         // met a known goblin again
+
+// ---- Goblin encounters ----------------------------------------------------
+#define PEER_REVISIT_MS         (15UL * 60 * 1000)  // same goblin counts again after 15 min apart
+#define PEER_TOGETHER_MS        (2UL * 60 * 1000)   // "nearby" = seen in the last 2 min
 
 // ---- Sprites --------------------------------------------------------------
 #define SPRITE_BOX              128        // companion drawing area (px)

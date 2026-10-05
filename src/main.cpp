@@ -16,6 +16,7 @@
 #include "scanners/ScanManager.h"
 #include "scanners/ThreadScanner.h"
 #include "scanners/WifiScanner.h"
+#include "social/Peer.h"
 #include "ui/Companion.h"
 #include "ui/Ui.h"
 
@@ -24,7 +25,7 @@ Companion companion;
 ScanManager scans;
 WifiScanner wifiScanner;
 BleScanner bleScanner(&engine.settings().bleScan);
-ThreadScanner threadScanner;
+ThreadScanner threadScanner(&engine.settings().scan154);
 
 uint32_t lastFrameMs = 0;
 uint32_t lastGeoMs = 0;
@@ -51,6 +52,9 @@ void handleEvents() {
         fx::chirp(2400, 30);
         break;
       case EventType::NewChannel:
+      case EventType::New154:
+      case EventType::PeerNew:
+      case EventType::PeerReunion:
       case EventType::NewCell:
       case EventType::DailyBonus:
         companion.react(CState::Excited, 2000);
@@ -116,7 +120,7 @@ void setup() {
   // a short window after power-on to press it instead.
   ui::splash("press BOOT now for diagnostics");
   if (diag::requested(1500)) {
-    Scanner* const radios[] = {&wifiScanner, &bleScanner};
+    Scanner* const radios[] = {&wifiScanner, &bleScanner, &threadScanner};
     diag::run(radios, sizeof(radios) / sizeof(radios[0]));
   }
 
@@ -133,8 +137,12 @@ void setup() {
   ui::splash("warming up radios...");
   scans.add(&wifiScanner);
   scans.add(&bleScanner);
-  scans.add(&threadScanner);  // disabled stub for v1.1
+  scans.add(&threadScanner);
   scans.begin();
+
+  // Goblin identity + "I'm a goblin" beacon (needs BLE, which scans.begin() started).
+  peer::begin();
+  if (st.beacon) peer::startBeacon(engine.level());
 
   if (!storage::ok()) ui::toast("No SD: progress won't save", 0xF800);
   log_i("setup done, heap %u KB, PSRAM %u KB free", ESP.getFreeHeap() / 1024, ESP.getFreePsram() / 1024);

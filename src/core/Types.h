@@ -2,68 +2,118 @@
 #include <Arduino.h>
 #include <bitset>
 
-enum class Radio : uint8_t { WiFi = 1, BLE = 2, Thread = 3 };
+// Values are mixed into stored ids: never renumber. (Thread = any 802.15.4, incl. Zigbee;
+// its tag is also used for exploration-cell ids.)
+enum class Radio : uint8_t { WiFi = 1, BLE = 2, Thread = 3, Peer = 4 };
 
 enum class AuthCat : uint8_t { Open, WEP, WPA, WPA3, Enterprise, Other };
+
+// Sighting::flags bits, per radio
+namespace sflag {
+// Wi-Fi
+const uint8_t kWifi6 = 0x01;     // 802.11ax
+const uint8_t kWps = 0x02;
+const uint8_t kHidden = 0x04;    // empty SSID
+// BLE
+const uint8_t kIBeacon = 0x01;
+const uint8_t kEddystone = 0x02;
+const uint8_t kNamed = 0x04;     // advertises a local name
+// 802.15.4
+const uint8_t kZigbee = 0x01;    // looks like Zigbee (NWK header / beacon protocol 0)
+const uint8_t kThread = 0x02;    // looks like Thread (6LoWPAN / MAC security / beacon protocol 3)
+const uint8_t kBeacon = 0x04;    // MAC beacon frame
+}  // namespace sflag
 
 // One observation of a transmitter, produced by a scanner module.
 struct Sighting {
   Radio radio;
-  uint8_t mac[6];
-  char name[33];      // SSID / BLE local name (may be empty)
+  uint8_t mac[8];     // address (Wi-Fi/BLE: 6 bytes, 802.15.4: 2 or 8, Peer: goblin id)
+  uint8_t macLen;
+  char name[33];      // SSID / BLE local name / peer goblin name (may be empty)
   int8_t rssi;
-  uint8_t channel;    // Wi-Fi channel (0 for BLE)
+  uint8_t channel;    // Wi-Fi channel, 802.15.4 channel 11-26, 0 for BLE
   AuthCat auth;       // Wi-Fi only
   bool stableAddr;    // BLE: public or static-random (false = rotating private addr)
+  uint8_t flags;      // sflag:: bits for this radio
+  uint16_t panId;     // 802.15.4 PAN id (0xFFFF = none)
+  uint16_t peerLevel; // Peer only
+  uint8_t peerHue;    // Peer only: colour of their goblin
 };
 
-struct Stats {
-  uint32_t xp = 0;
-  uint32_t scans = 0;
-  uint32_t sessions = 0;
+// Lifetime counters saved in state.json under their own names. Add new ones at will;
+// never rename (the name is the JSON key). Counters derived from the SD id stores
+// (unique networks/devices/areas/goblins) live in Stats below instead.
+#define NG_SAVED_COUNTERS(X)                                                              \
+  X(xp) X(scans) X(sessions) X(pets) X(uptimeMin)                                         \
+  X(wifi5g) X(wifiOpen) X(wifiWep) X(wifiWpa3) X(wifiEnterprise) X(wifi6) X(wifiWps)      \
+  X(wifiHidden) X(wifiDfs) X(maxApsInScan)                                                \
+  X(bleSightings) X(bleNamed) X(bleIBeacon) X(bleEddystone) X(maxBleInScan)               \
+  X(t154Frames) X(zigbeePans) X(threadPans)                                               \
+  X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
+  X(lastDay) X(streak) X(bestStreak)
 
-  // Wi-Fi
+struct Stats {
+#define NG_DECLARE_COUNTER(n) uint32_t n = 0;
+  NG_SAVED_COUNTERS(NG_DECLARE_COUNTER)
+#undef NG_DECLARE_COUNTER
+
+  // Derived from the id stores on SD at boot
   uint32_t wifiUnique = 0;      // unique BSSIDs
   uint32_t ssidUnique = 0;      // unique non-hidden SSIDs
-  uint32_t wifi5g = 0;
-  uint32_t wifiOpen = 0;
-  uint32_t wifiWpa3 = 0;
-  uint32_t wifiEnterprise = 0;
-  int8_t bestRssi = -127;
-  std::bitset<200> channels;    // indexed by channel number
+  uint32_t bleUnique = 0;       // stable-address BLE devices only
+  uint32_t t154Unique = 0;      // unique 802.15.4 devices
+  uint32_t t154Pans = 0;        // unique 802.15.4 networks (PAN id + channel)
+  uint32_t peersMet = 0;        // unique goblins
+  uint32_t geoCells = 0;        // GPS exploration cells
 
-  // BLE
-  uint32_t bleUnique = 0;       // stable-address devices only
-  uint32_t bleSightings = 0;    // everything incl. rotating addresses
-
-  // Exploration (needs GPS)
-  uint32_t geoCells = 0;
-  uint32_t lastDay = 0;         // days since epoch (UTC)
-  uint32_t streak = 0;
-  uint32_t bestStreak = 0;
-
-  std::bitset<64> achieved;
+  int8_t bestRssi = -127;       // strongest Wi-Fi signal ever
+  int8_t worstRssi = 0;         // weakest Wi-Fi signal ever (0 = none yet)
+  std::bitset<200> channels;    // Wi-Fi channels seen, indexed by channel number
+  std::bitset<27> channels154;  // 802.15.4 channels seen (11-26)
+  std::bitset<128> achieved;
 
   // This power-on session (not persisted)
   uint32_t sessWifiNew = 0;
   uint32_t sessBleNew = 0;
+  uint32_t sess154New = 0;
   uint32_t sessXp = 0;
-  uint32_t lastScanSeen = 0;    // APs in the most recent scan
+  uint32_t lastScanSeen = 0;    // APs in the most recent Wi-Fi scan
+  uint32_t lastBleSeen = 0;     // advertisers in the most recent BLE scan
+  uint32_t last154Seen = 0;     // frames in the most recent 802.15.4 sweep
 };
 
 struct Settings {
   uint8_t brightness = 80;
   bool bleScan = true;
+  bool scan154 = true;          // passive Zigbee/Thread listening
+  bool beacon = true;           // advertise "I'm a goblin" so other Scouts notice us
   bool gps = true;
   bool sound = true;
   bool invert = false;
   String spritePack = "goblin";
 };
 
-enum class EventType : uint8_t { NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus };
+enum class EventType : uint8_t {
+  NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
+  New154, PeerNew, PeerReunion
+};
 
 struct UiEvent {
   EventType type;
   uint32_t value;
   char text[40];
+  // Peer events: the other goblin
+  char peerName[13];
+  uint16_t peerLevel;
+  uint8_t peerHue;
+};
+
+// A goblin seen recently (for the status bar and the encounter scene).
+struct NearbyPeer {
+  uint32_t id = 0;
+  char name[13] = {0};
+  uint16_t level = 0;
+  uint8_t hue = 0;
+  int8_t rssi = -127;
+  uint32_t lastSeenMs = 0;
 };
