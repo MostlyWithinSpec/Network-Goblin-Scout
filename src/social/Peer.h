@@ -13,5 +13,6 @@ const peercodec::Info& self();
 void startBeacon(uint16_t level);
 void stopBeacon();
 void update(uint16_t level);        // cheap; only re-advertises when the level changes
+void setHat(uint8_t hat);           // shown to other goblins; re-advertises if changed
 bool beaconOn();
 }  // namespace peer

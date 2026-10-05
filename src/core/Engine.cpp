@@ -6,6 +6,8 @@
 #include "../hal/Gps.h"
 #include "../hal/Storage.h"
 #include "Achievements.h"
+#include "Hats.h"
+#include "Quests.h"
 #include "config.h"
 
 Engine engine;
@@ -48,6 +50,11 @@ bool Engine::begin() {
   stats_.peersMet = g;
   stats_.sessions++;
   lastMinuteMs_ = millis();
+  hatMask_ = hats::unlockedMask(stats_, level());
+  if (!board_.active && stats_.uptimeMin >= board_.nextAtMin) {
+    quests::deal(stats_, level(), esp_random(), board_);
+    push(EventType::NewQuests, 0, "New quests on the board!");
+  }
   checkAchievements();
   dirty_ = true;
   return true;
@@ -90,7 +97,8 @@ void Engine::processWifi(const Sighting& s) {
 
   if (s.channel && s.channel < 200 && !stats_.channels[s.channel]) {
     stats_.channels.set(s.channel);
-    addXp(XP_NEW_CHANNEL);
+    addXp(XP_NEW_CHANNEL, true);
+    feed(0, -150);
     char t[40];
     snprintf(t, sizeof(t), "New channel %u!", s.channel);
     push(EventType::NewChannel, s.channel, t);
@@ -104,6 +112,7 @@ void Engine::processWifi(const Sighting& s) {
   }
 
   uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
+  blip(bssidId, s.rssi, Radio::WiFi);
   char extra[96];
   uint32_t now = gps::unixTime();
   if (gps::hasFix())
@@ -129,15 +138,18 @@ void Engine::processWifi(const Sighting& s) {
     case AuthCat::Enterprise: stats_.wifiEnterprise++; break;
     default: break;
   }
-  addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK);
+  addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK, true);
+  feed(-15, -4);
 }
 
 void Engine::processBle(const Sighting& s) {
   stats_.bleSightings++;
+  uint64_t anyId = id(Radio::BLE, s.mac, 6);
+  blip(anyId, s.rssi, Radio::BLE);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
   if (!s.stableAddr) return;
-  uint64_t bleId = id(Radio::BLE, s.mac, 6);
+  uint64_t bleId = anyId;
   char extra[32];
   snprintf(extra, sizeof(extra), "%d,%lu", s.rssi, (unsigned long)gps::unixTime());
   if (!ble_.add(bleId, extra)) return;
@@ -147,7 +159,8 @@ void Engine::processBle(const Sighting& s) {
   if (s.flags & sflag::kNamed) stats_.bleNamed++;
   if (s.flags & sflag::kIBeacon) stats_.bleIBeacon++;
   if (s.flags & sflag::kEddystone) stats_.bleEddystone++;
-  addXp(XP_NEW_BLE);
+  addXp(XP_NEW_BLE, true);
+  feed(-8, -2);
 }
 
 void Engine::process154(const Sighting& s) {
@@ -163,7 +176,8 @@ void Engine::process154(const Sighting& s) {
     snprintf(extra, sizeof(extra), "%u,%s", s.channel, kind);
     if (pans_.add(panId, extra)) {
       stats_.t154Pans++;
-      addXp(XP_NEW_PAN);
+      addXp(XP_NEW_PAN, true);
+      feed(0, -200);
       const char* t = "New 802.15.4 network!";
       if (s.flags & sflag::kZigbee) { stats_.zigbeePans++; t = "New Zigbee network!"; }
       if (s.flags & sflag::kThread) { stats_.threadPans++; t = "New Thread network!"; }
@@ -173,6 +187,7 @@ void Engine::process154(const Sighting& s) {
   }
 
   uint64_t devId = id(Radio::Thread, s.mac, s.macLen);
+  blip(devId, s.rssi, Radio::Thread);
   char extra[64];
   snprintf(extra, sizeof(extra), "%016llx,%u,%s,%d,%lu", (unsigned long long)panId, s.channel, kind, s.rssi,
            (unsigned long)gps::unixTime());
@@ -180,7 +195,8 @@ void Engine::process154(const Sighting& s) {
   stats_.t154Unique++;
   stats_.sess154New++;
   batch154New++;
-  addXp(XP_NEW_154);
+  addXp(XP_NEW_154, true);
+  feed(-20, -5);
 }
 
 void Engine::processPeer(const Sighting& s) {
@@ -202,6 +218,8 @@ void Engine::processPeer(const Sighting& s) {
   slot->level = s.peerLevel;
   slot->hue = s.peerHue;
   slot->rssi = s.rssi;
+  slot->hat = s.flags;
+  blip(id(Radio::Peer, s.mac, 4), s.rssi, Radio::Peer);
   slot->lastSeenMs = now;
   if (!encounter) return;
 
@@ -221,6 +239,7 @@ void Engine::processPeer(const Sighting& s) {
   snprintf(t, sizeof(t), isNew ? "Met %s!" : "%s is back!", slot->name);
   push(isNew ? EventType::PeerNew : EventType::PeerReunion, s.peerLevel, t, slot);
   addXp(isNew ? XP_NEW_PEER : XP_PEER_REUNION);
+  feed(-100, -400);
   checkAchievements();
 }
 
@@ -269,6 +288,7 @@ void Engine::endScan(Radio radio, uint32_t seenThisScan) {
 
 void Engine::pet() {
   stats_.pets++;
+  feed(0, -10);
   checkAchievements();
   dirty_ = true;
 }
@@ -302,7 +322,8 @@ void Engine::updateLocation() {
     if (cells_.add(id(Radio::Thread /* historical tag, keep */, key, 8) ^ 0x43454C4C00000000ULL, "")) {
       stats_.geoCells++;
       if (stats_.geoCells > 1) {
-        addXp(XP_NEW_CELL);
+        addXp(XP_NEW_CELL, true);
+        feed(0, -250);
         push(EventType::NewCell, stats_.geoCells, "New area explored!");
       }
       cells_.flush();
@@ -313,7 +334,13 @@ void Engine::updateLocation() {
 }
 
 // ---------------------------------------------------------------------------
-void Engine::addXp(uint32_t xp) {
+void Engine::addXp(uint32_t xp, bool discovery) {
+  // A happy goblin (fed and entertained) earns +25% on discoveries.
+  if (discovery && mood() == Mood::Happy) {
+    bonusAcc_ += xp;
+    xp += bonusAcc_ / 4;
+    bonusAcc_ %= 4;
+  }
   uint16_t before = progression::levelForXp(stats_.xp);
   stats_.xp += xp;
   stats_.sessXp += xp;
@@ -325,9 +352,78 @@ void Engine::addXp(uint32_t xp) {
   }
 }
 
+void Engine::feed(int32_t hunger, int32_t boredom) {
+  auto adj = [](uint32_t& v, int32_t d) {
+    int32_t n = (int32_t)v + d;
+    v = (uint32_t)(n < 0 ? 0 : (n > 1000 ? 1000 : n));
+  };
+  adj(stats_.hunger, hunger);
+  adj(stats_.boredom, boredom);
+}
+
+Mood Engine::mood() const {
+  if (stats_.hunger >= 850) return Mood::Starving;
+  if (stats_.hunger >= 600) return Mood::Hungry;
+  if (stats_.boredom >= 650) return Mood::Bored;
+  if (stats_.hunger < 300 && stats_.boredom < 300) return Mood::Happy;
+  return Mood::Content;
+}
+
+void Engine::blip(uint64_t idv, int8_t rssi, Radio r) {
+  uint16_t angle = (uint16_t)((idv >> 20) & 4095);
+  uint32_t now = millis();
+  Blip* slot = &blips_[0];
+  for (auto& b : blips_) {
+    if (b.lastSeenMs && b.angle == angle && b.radio == r) { slot = &b; break; }
+    if (b.lastSeenMs < slot->lastSeenMs) slot = &b;  // else reuse the oldest
+  }
+  slot->angle = angle;
+  slot->rssi = rssi;
+  slot->radio = r;
+  slot->lastSeenMs = now ? now : 1;
+}
+
+void Engine::checkQuests() {
+  if (!board_.active) return;
+  bool all = true;
+  for (auto& q : board_.q) {
+    if (q.done) continue;
+    if (quests::progress(stats_, q) >= q.target) {
+      q.done = true;
+      stats_.questsDone++;
+      char t[40];
+      snprintf(t, sizeof(t), "Quest done! +%lu XP", (unsigned long)quests::reward(q));
+      push(EventType::QuestDone, quests::reward(q), t);
+      addXp(quests::reward(q));
+      feed(0, -200);
+      dirty_ = true;
+    } else {
+      all = false;
+    }
+  }
+  if (all) {
+    stats_.boardsCleared++;
+    board_.active = false;
+    board_.nextAtMin = stats_.uptimeMin + QUEST_COOLDOWN_MIN;
+    addXp(XP_BOARD_CLEARED);
+    push(EventType::BoardCleared, XP_BOARD_CLEARED, "Quest board cleared!");
+  }
+}
+
 uint16_t Engine::level() const { return progression::levelForXp(stats_.xp); }
 
 void Engine::checkAchievements() {
+  checkQuests();
+  uint32_t mask = hats::unlockedMask(stats_, level());
+  if (uint32_t fresh = mask & ~hatMask_) {
+    for (uint8_t i = 0; i < hats::kCount; i++)
+      if (fresh & (1u << i)) {
+        char t[40];
+        snprintf(t, sizeof(t), "New hat: %s!", hats::kHats[i].name);
+        push(EventType::HatUnlocked, i + 1, t);
+      }
+    hatMask_ = mask;
+  }
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++) {
     if (stats_.achieved[i]) continue;
     if (ACHIEVEMENTS[i].check(stats_)) {
@@ -348,10 +444,12 @@ void Engine::push(EventType t, uint32_t v, const char* text, const NearbyPeer* p
   e.peerName[0] = 0;
   e.peerLevel = 0;
   e.peerHue = 0;
+  e.peerHat = 0;
   if (p) {
     strlcpy(e.peerName, p->name, sizeof(e.peerName));
     e.peerLevel = p->level;
     e.peerHue = p->hue;
+    e.peerHat = p->hat;
   }
   qHead_ = next;
 }
@@ -369,6 +467,11 @@ void Engine::tick() {
   if (now - lastMinuteMs_ >= 60000) {
     lastMinuteMs_ += 60000;
     stats_.uptimeMin++;
+    feed(HUNGER_PER_MIN, BOREDOM_PER_MIN);  // the goblin gets hungry and bored over time
+    if (!board_.active && stats_.uptimeMin >= board_.nextAtMin) {
+      quests::deal(stats_, level(), esp_random(), board_);
+      push(EventType::NewQuests, 0, "New quests on the board!");
+    }
     checkAchievements();
     dirty_ = true;
   }
@@ -394,6 +497,18 @@ void Engine::saveNow() {
   for (size_t i = 0; i < stats_.channels154.size(); i++)
     if (stats_.channels154[i]) ch154.add(i);
 
+  JsonObject qb = doc["quests"].to<JsonObject>();
+  qb["active"] = board_.active;
+  qb["next"] = board_.nextAtMin;
+  JsonArray qa = qb["q"].to<JsonArray>();
+  for (const auto& q : board_.q) {
+    JsonObject o = qa.add<JsonObject>();
+    o["t"] = q.type;
+    o["n"] = q.target;
+    o["b"] = q.base;
+    o["d"] = q.done;
+  }
+
   JsonArray ach = doc["achievements"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
     if (stats_.achieved[i]) ach.add(ACHIEVEMENTS[i].id);
@@ -407,6 +522,7 @@ void Engine::saveNow() {
   set["sound"] = settings_.sound;
   set["invert"] = settings_.invert;
   set["fastDisplay"] = settings_.fastDisplay;
+  set["hat"] = settings_.hat;
   set["sprites"] = settings_.spritePack;
 
   String out;
@@ -443,6 +559,23 @@ void Engine::loadState() {
       if (strcmp(key, ACHIEVEMENTS[i].id) == 0) stats_.achieved.set(i);
   }
 
+  JsonObject qb = doc["quests"];
+  if (!qb.isNull()) {
+    board_.active = qb["active"] | false;
+    board_.nextAtMin = qb["next"] | 0;
+    size_t i = 0;
+    JsonArray qa = qb["q"];
+    for (JsonObject o : qa) {
+      if (i >= 3) break;
+      Quest& q = board_.q[i++];
+      q.type = o["t"] | 0;
+      q.target = o["n"] | 1;
+      q.base = o["b"] | 0;
+      q.done = o["d"] | false;
+      if (q.type >= quests::kTypeCount) board_.active = false;  // from a newer firmware: re-deal
+    }
+  }
+
   JsonObject set = doc["settings"];
   if (!set.isNull()) {
     settings_.brightness = set["brightness"] | 80;
@@ -453,6 +586,7 @@ void Engine::loadState() {
     settings_.sound = set["sound"] | true;
     settings_.invert = set["invert"] | false;
     settings_.fastDisplay = set["fastDisplay"] | true;
+    settings_.hat = set["hat"] | 0;
     settings_.spritePack = set["sprites"] | "goblin";
   }
 }

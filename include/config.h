@@ -1,9 +1,12 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.2.2"
+#define NG_FW_VERSION           "0.3.0"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
+
+// Where the share card's QR code points. Change it to whatever you want people to find.
+#define NG_SHARE_URL            "https://github.com/MostlyWithinSpec/Network-Goblin-Scout"
 
 // ---- Display --------------------------------------------------------------
 #define DISPLAY_SPI_HZ          40000000   // "Turbo display" off
@@ -52,6 +55,12 @@
 #define XP_NEW_PAN              15         // new Zigbee/Thread network
 #define XP_NEW_PEER             100        // met a new goblin
 #define XP_PEER_REUNION         25         // met a known goblin again
+#define XP_BOARD_CLEARED        100        // finished all three quests
+
+// ---- Quests & needs -------------------------------------------------------
+#define QUEST_COOLDOWN_MIN      30         // minutes of scanning before a new board after clearing one
+#define HUNGER_PER_MIN          8          // 0..1000: empty to starving in ~2 h without discoveries
+#define BOREDOM_PER_MIN         5          // 0..1000: ~3.3 h without anything new or fun
 
 // ---- Goblin encounters ----------------------------------------------------
 #define PEER_REVISIT_MS         (15UL * 60 * 1000)  // same goblin counts again after 15 min apart

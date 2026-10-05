@@ -70,6 +70,13 @@ void update(uint16_t level) {
   if (advertising) advertise();
 }
 
+void setHat(uint8_t hat) {
+  uint8_t f = (me.flags & 0xE0) | (hat & 0x1F);
+  if (f == me.flags) return;
+  me.flags = f;
+  if (advertising) advertise();
+}
+
 bool beaconOn() { return advertising; }
 
 }  // namespace peer

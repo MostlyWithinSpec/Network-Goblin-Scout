@@ -50,7 +50,8 @@ struct Sighting {
   X(bleSightings) X(bleNamed) X(bleIBeacon) X(bleEddystone) X(maxBleInScan)               \
   X(t154Frames) X(zigbeePans) X(threadPans)                                               \
   X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
-  X(lastDay) X(streak) X(bestStreak)
+  X(lastDay) X(streak) X(bestStreak)                                                     \
+  X(questsDone) X(boardsCleared) X(hunger) X(boredom)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -91,12 +92,13 @@ struct Settings {
   bool sound = true;
   bool invert = false;
   bool fastDisplay = true;      // "Turbo display": SPI at full crystal speed
+  uint8_t hat = 0;              // equipped hat id (0 = none), see core/Hats.h
   String spritePack = "goblin";
 };
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked
 };
 
 struct UiEvent {
@@ -107,6 +109,7 @@ struct UiEvent {
   char peerName[13];
   uint16_t peerLevel;
   uint8_t peerHue;
+  uint8_t peerHat;
 };
 
 // A goblin seen recently (for the status bar and the encounter scene).
@@ -116,5 +119,35 @@ struct NearbyPeer {
   uint16_t level = 0;
   uint8_t hue = 0;
   int8_t rssi = -127;
+  uint8_t hat = 0;
+  uint32_t lastSeenMs = 0;
+};
+
+// ---- Quests ---------------------------------------------------------------
+// A quest is "grow metric X by `target` since the board was dealt" (see core/Quests.h).
+struct Quest {
+  uint8_t type = 0;     // QuestType; saved, append-only
+  uint16_t target = 0;
+  uint32_t base = 0;    // metric value when dealt
+  bool done = false;
+};
+
+struct QuestBoard {
+  Quest q[3];
+  bool active = false;      // false = waiting for a new board
+  uint32_t nextAtMin = 0;   // uptimeMin when the next board is dealt
+};
+
+// ---- Needs -----------------------------------------------------------------
+// hunger / boredom are 0..1000 saved counters; the mood is derived from them.
+enum class Mood : uint8_t { Happy, Content, Hungry, Bored, Starving };
+
+// ---- Radar -----------------------------------------------------------------
+// Something heard recently, for the radar screen. `angle` comes from the salted id,
+// so the radar never sees an address; it just keeps each device in the same spot.
+struct Blip {
+  uint16_t angle = 0;   // 0..4095
+  int8_t rssi = -127;
+  Radio radio = Radio::WiFi;
   uint32_t lastSeenMs = 0;
 };

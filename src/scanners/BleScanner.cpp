@@ -62,6 +62,7 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
       s.macLen = 4;
       s.peerLevel = peer.level;
       s.peerHue = peer.hue;
+      s.flags = peer.flags & 0x1F;  // equipped hat id
       strlcpy(s.name, peer.name, sizeof(s.name));
       xQueueSend(q, &s, 0);
       return;
