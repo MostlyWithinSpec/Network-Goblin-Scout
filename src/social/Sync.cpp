@@ -122,6 +122,18 @@ String buildBody() {
   d["level"] = engine.level();
   d["hats"] = engine.hatMask();
   if (!claimed_) d["claim"] = secretHex_;  // only until the server has registered us
+  // Encounter cross-check: our beacon id and the beacon ids of goblins we've met. The server counts a
+  // meeting only when the other goblin reports us too; it shows counts, never who met whom.
+  char hexId[9];
+  snprintf(hexId, sizeof(hexId), "%08lx", (unsigned long)me.id);
+  d["gid"] = hexId;
+  size_t metN = 0;
+  const uint32_t* met = engine.metIds(metN);
+  JsonArray metArr = d["met"].to<JsonArray>();
+  for (size_t i = 0; i < metN; i++) {
+    snprintf(hexId, sizeof(hexId), "%08lx", (unsigned long)met[i]);
+    metArr.add(hexId);
+  }
   JsonObject c = d["c"].to<JsonObject>();
   c["wifi"] = st.wifiUnique;
   c["ssid"] = st.ssidUnique;

@@ -109,6 +109,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    network, one HTTPS POST of counts (`social/Sync.cpp`, server in the network-goblin-labs repo `api/`),
    disconnect, resume. Never add background syncing, probe-request scans, active BLE scans or
    802.15.4 transmissions. Sync uploads counts only: never SSIDs, MACs, salted ids, coordinates.
+   Exception for the encounter cross-check: our own beacon goblin id and the beacon ids of goblins met
+   (random public ids the goblins broadcast anyway; kept in /scout/met.txt). The site shows counts only.
 
 ## Layout
 
@@ -221,4 +223,8 @@ goblin, new goblins capped at 5/IP/day and 500/day (IP stored only as a daily sa
 200k XP and other implausible numbers shadow-hide the goblin, rude names masked as "Goblin xxxx". Owner is on
 Cloudflare's Free plan: over-limit requests fail, nothing is billed. Unhide a wrongly hidden goblin in the D1
 console: `UPDATE goblins SET hidden = 0, hidden_why = NULL WHERE key = '...'`.
-Next: encounter cross-checks (docs/sync-plan.md).
+v0.5.2 (compiles; untested on hardware): encounter cross-check. Engine remembers beacon ids of goblins met
+(last 200, /scout/met.txt, from v0.5.2 on); sync sends `gid` + `met`; the server counts a meeting only when
+both goblins report each other (`met_ok`, used by the goblins-met board). Beacon id squatting is ignored
+(first claim wins).
+Next: ideas list (docs/sync-plan.md section 6), battery hardware when parts arrive.

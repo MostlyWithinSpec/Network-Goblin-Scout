@@ -191,6 +191,8 @@ The goblin is nosy, not creepy.
   (level, XP, how many networks/devices, trophies, hats), then disconnects. Never names, addresses, ids or
   locations. Your Wi-Fi password stays on the device. Uploads are signed with a key that never leaves it
   (except once, over HTTPS, to register), so nobody else can post as your goblin.
+- **Goblins met, honestly.** Sync also sends the random beacon ids of goblins you've met, so the server can
+  count a meeting only when *both* goblins report it. The site only ever shows how many, never who met whom.
 - **Leave any time.** Sync screen → **remove me** (tap twice) deletes your goblin's entry from the server.
   Pressing Sync later puts it back.
 - **The one thing it sends on its own** is the goblin beacon: a non-connectable BLE advert with a random goblin id, a
@@ -212,6 +214,7 @@ The goblin is nosy, not creepy.
 /scout/trackers.txt  ids of item trackers heard, and what kind
 /scout/trackers_ok.txt  trackers you said are yours (no alerts for these)
 /scout/sync.key      your goblin's leaderboard key (like salt.bin: don't share it)
+/scout/met.txt       beacon ids of goblins met (for the leaderboard's encounter cross-check)
 /sprites/<pack>/     sprite packs (see below)
 ```
 
@@ -280,7 +283,7 @@ sd_card/                 copy to the microSD card
 - [x] Battery support in firmware (MAX17048 or BQ27441). The hardware side is DIY: [docs/battery.md](docs/battery.md)
 - [x] Goblin Sync, [leaderboards](https://scout.networkgoblin.dev/leaderboard/) and goblin profiles, self-service removal
 - [x] [Web flasher](https://scout.networkgoblin.dev/flash/): install and update from the browser
-- [ ] Encounter cross-checks for the "goblins met" board: [docs/sync-plan.md](docs/sync-plan.md)
+- [x] Encounter cross-checks: the "goblins met" board counts only meetings both goblins report
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits

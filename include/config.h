@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.5.1"
+#define NG_FW_VERSION           "0.5.2"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
