@@ -17,8 +17,10 @@
 #define TOUCH_RAW_Y_MIN         250
 #define TOUCH_RAW_Y_MAX         3800
 #define TOUCH_SWAP_XY           1
-#define TOUCH_INVERT_X          0
-#define TOUCH_INVERT_Y          0
+// Both axes inverted: confirmed on hardware (crosshair landed opposite the finger),
+// and matches the vendor's rotation-3 handling in their Bruce port.
+#define TOUCH_INVERT_X          1
+#define TOUCH_INVERT_Y          1
 #define TOUCH_MIN_PRESSURE      300
 #define TOUCH_SPI_HZ            2500000
 
