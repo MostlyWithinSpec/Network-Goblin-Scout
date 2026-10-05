@@ -10,9 +10,20 @@ bool mounted = false;
 namespace storage {
 
 bool begin() {
-  mounted = SD.begin(PIN_SD_CS, SPI, 20000000);
+  // A card left mid-command by a crash or reset (its power isn't cut) can miss the first
+  // init, and some cards dislike 20 MHz: retry a few times, then fall back to 4 MHz.
+  static const uint32_t kHz[] = {20000000, 20000000, 4000000, 4000000};
+  for (uint32_t hz : kHz) {
+    mounted = SD.begin(PIN_SD_CS, SPI, hz);
+    if (mounted) {
+      if (hz != kHz[0]) log_w("storage: SD mounted only at %lu MHz", (unsigned long)(hz / 1000000));
+      break;
+    }
+    SD.end();
+    delay(50);
+  }
   if (!mounted) {
-    log_w("storage: no microSD card (running without persistence)");
+    log_w("storage: no microSD card, or it can't be mounted (running without persistence)");
     return false;
   }
   ensureDir(NG_DATA_DIR);
@@ -46,8 +57,14 @@ bool writeTextAtomic(const char* path, const String& text) {
   size_t n = f.print(text);
   f.close();
   if (n != text.length()) return false;
-  if (SD.exists(path)) SD.remove(path);
-  return SD.rename(tmp, path);
+  // Keep the previous version as <path>.bak until the new one is in place, so a reset at
+  // any moment leaves at least one complete copy (see Engine::loadState for recovery).
+  String bak = String(path) + ".bak";
+  if (SD.exists(bak)) SD.remove(bak);
+  if (SD.exists(path) && !SD.rename(path, bak)) SD.remove(path);
+  if (SD.rename(tmp, path)) return true;
+  if (SD.exists(bak)) SD.rename(bak, path);  // put the old one back
+  return false;
 }
 
 bool append(const char* path, const String& text) {

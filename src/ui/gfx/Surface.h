@@ -13,7 +13,17 @@ inline constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
 }
 inline constexpr uint16_t hex(uint32_t c) { return rgb((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF); }
 
-uint16_t blend(uint16_t dst, uint16_t src, uint8_t a);   // a = 0..255 coverage of src
+// a = 0..255 coverage of src. RGB565 "spread" trick: green moves to the top half of a
+// 32-bit word, leaving spare bits above each channel so all three blend in one multiply.
+__attribute__((always_inline)) inline uint16_t blend(uint16_t d, uint16_t s, uint8_t a) {
+  if (a >= 252) return s;
+  if (a < 4) return d;
+  uint32_t al = (a + 4) >> 3;  // 0..32
+  uint32_t D = (d | ((uint32_t)d << 16)) & 0x07E0F81F;
+  uint32_t S = (s | ((uint32_t)s << 16)) & 0x07E0F81F;
+  uint32_t R = ((S * al + D * (32 - al)) >> 5) & 0x07E0F81F;
+  return (uint16_t)(R | (R >> 16));
+}
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t);         // t = 0 -> a, 255 -> b
 uint16_t dim(uint16_t c, uint8_t k);                     // k = 255 -> unchanged
 uint16_t hue(uint8_t h, uint8_t s = 255, uint8_t v = 255);  // HSV with 0-255 ranges
@@ -47,7 +57,13 @@ class Surface {
   void offset(int16_t dx, int16_t dy) { ox_ = dx; oy_ = dy; }  // translate all drawing (transitions)
 
   void clear(uint16_t c);
-  void pixel(int16_t x, int16_t y, uint16_t c, uint8_t a = 255);
+  __attribute__((always_inline)) inline void pixel(int16_t x, int16_t y, uint16_t c, uint8_t a = 255) {
+    x += ox_;
+    y += oy_;
+    if (x < cx0_ || x >= cx1_ || y < cy0_ || y >= cy1_ || !a) return;
+    uint16_t& p = px_[(size_t)y * w_ + x];
+    p = blend(p, c, a);
+  }
   void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c, uint8_t a = 255);
   void rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c, uint8_t a = 255);
   void hline(int16_t x, int16_t y, int16_t w, uint16_t c, uint8_t a = 255) { fillRect(x, y, w, 1, c, a); }

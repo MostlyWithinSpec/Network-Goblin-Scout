@@ -4,9 +4,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../core/Achievements.h"
+#include "../core/Clock.h"
+#include "../core/Hats.h"
+#include "../core/Quests.h"
+#include "../core/Trackers.h"
+#include "../social/PeerCodec.h"
+#include "../social/Sniff.h"
+#include "HatArt.h"
 #include "Theme.h"
 #include "Widgets.h"
 #include "assets/GoblinArt.h"
+
+extern "C" {
+#include "qrcodegen.h"
+}
 
 using namespace theme;
 
@@ -18,16 +29,20 @@ const float kPi = 3.14159265f;
 
 // ---------------------------------------------------------------------------
 // State
-enum class Screen : uint8_t { Home, Stats, Badges, Setup, TouchTest };
+// The first five are the tabs, in tab order.
+enum class Screen : uint8_t { Home, Radar, Stats, Loot, Setup, TouchTest, Share, Disclaimer, Naming, Clock, Sync, WifiPick };
+const int kTabCount = 5;
+void goTo(Screen sc, uint32_t now);
 
 Hooks hooks;
 uint16_t* bgCache = nullptr;
 bool bgReady = false;
+uint8_t bgPhase = clk::kDay;   // time of day baked into bgCache
 Companion companion;
 
 Screen screen = Screen::Home;
 int statsPage = 0;
-int badgePage = 0;
+int lootPage = 0;              // 0 quests, 1 wardrobe, 2.. trophies
 int badgeDetail = -1;
 uint32_t screenChangedAt = 0;
 int8_t slideDir = 0;          // -1 / +1 = content slides in from the left / right
@@ -64,7 +79,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -72,7 +87,11 @@ struct Overlay {
   char peerName[13];
   uint16_t peerLevel;
   uint8_t peerHue;
+  uint8_t peerHat;
   bool isNew;
+  uint8_t ids[12];   // AchBatch: achievement indices shown
+  uint8_t idCount;
+  uint16_t total;    // AchBatch: how many in the batch
 };
 Overlay overlays[6];
 int overlayCount = 0;
@@ -131,6 +150,7 @@ void emit(PKind k, float x, float y, int n, uint16_t c, float speed, float life)
 
 void say(const char* q, uint32_t now, uint32_t ms = 4500) {
   quip = q;
+  if (now - quipStart > 1500) sfx(kSfxBabble);
   quipStart = now;
   quipUntil = now + ms;
   nextIdleQuip = now + 16000 + (rnd() % 9000);
@@ -145,11 +165,33 @@ const char* const kFoundQuips[] = {"SHINY!", "Mine! All mine!", "Into the hoard!
                                    "Nom nom packets"};
 const char* const kPetQuips[] = {"Hehe!", "That tickles!", "More pats!", "*happy goblin noises*", "Again!"};
 const char* const kMeshQuips[] = {"Smart home sighted!", "Bzzz... Zigbee!", "Mesh chatter!"};
+const char* const kHungryQuips[] = {"So... hungry...", "Feed me packets!", "Need new networks...", "*stomach growls*"};
+const char* const kBoredQuips[] = {"Booored.", "Same old networks...", "Let's go somewhere new!", "Nothing new here..."};
+const char* const kLowBattQuips[] = {"Running on fumes...", "Need... a charger...", "So... sleepy..."};
+const char* const kHappyQuips[] = {"Life is good.", "Best hoard ever!", "We make a great team!", "Fully fed, fully nosy."};
 
 // ---------------------------------------------------------------------------
 // Background
-void renderStaticBg(gfx::Surface& s) {
+// Time-of-day wash, baked into the cached background: horizontal bands fading upwards
+// from the bottom (dawn/dusk glow) or a darker sky at night.
+void skyTint(gfx::Surface& s, uint8_t phase) {
+  if (phase == clk::kNight) {
+    s.fillRect(0, 0, W, H, 0x0000, 150);
+    s.gradientV(0, 0, W, H / 2, gfx::hex(0x13235E), 0x0000, 90);
+    return;
+  }
+  if (phase == clk::kDay) return;
+  uint16_t c = phase == clk::kDawn ? gfx::hex(0xFF8A5C) : gfx::hex(0xC0408C);
+  const int bands = 16;
+  for (int i = 0; i < bands; i++) {
+    int16_t y = H / 4 + i * (H - H / 4) / bands;
+    s.fillRect(0, y, W, (H - H / 4) / bands + 1, c, (uint8_t)(8 + i * 7));
+  }
+}
+
+void renderStaticBg(gfx::Surface& s, uint8_t phase) {
   s.gradientV(0, 0, W, H, kBgTop, kBgBottom);
+  skyTint(s, phase);
   // honeycomb of faint dots
   for (int16_t y = 6, row = 0; y < H; y += 12, row++)
     for (int16_t x = (row & 1) ? 10 : 2; x < W; x += 16) s.pixel(x, y, kEdge, 90);
@@ -177,17 +219,36 @@ void renderStaticBg(gfx::Surface& s) {
     }
 }
 
+uint8_t timePhase(const UiModel& m) {
+  return m.localTime ? clk::phase(clk::fromUnix(m.localTime).hour) : clk::kDay;
+}
+
+void drawStars(gfx::Surface& s, uint32_t now) {
+  uint32_t r = 0x5EED5u;
+  for (int i = 0; i < 34; i++) {
+    r = r * 1103515245u + 12345u;
+    int16_t x = (int16_t)((r >> 8) % W), y = (int16_t)(kStatusH + (r >> 18) % (H - kStatusH - kNavH));
+    uint32_t tw = (now / 90 + (r >> 3)) % 64;  // slow twinkle, integer only
+    uint8_t a = (uint8_t)(110 + (tw < 32 ? tw : 63 - tw) * 4);
+    s.pixel(x, y, 0xFFFF, a);
+    if ((r >> 28) == 0) s.glow(x, y, 4, gfx::hex(0xBFD8FF), a / 3);
+  }
+}
+
 void drawBackground(gfx::Surface& s, const UiModel& m) {
+  uint8_t phase = timePhase(m);
   if (bgCache) {
-    if (!bgReady) {
+    if (!bgReady || phase != bgPhase) {
       gfx::Surface bg(bgCache, W, H);
-      renderStaticBg(bg);
+      renderStaticBg(bg, phase);
       bgReady = true;
+      bgPhase = phase;
     }
     memcpy(s.pixels(), bgCache, (size_t)W * H * 2);
   } else {
-    renderStaticBg(s);
+    renderStaticBg(s, phase);
   }
+  if (phase == clk::kNight) drawStars(s, m.now);
   // drifting data motes
   for (auto& mo : motes) {
     mo.y -= mo.speed * dt;
@@ -251,6 +312,21 @@ void drawStatusBar(gfx::Surface& s, const UiModel& m) {
   }
   // right side icons
   int16_t rx = W - 12;
+  if (m.battPresent) {  // battery: outline, fill level, % and a bolt while charging
+    uint16_t bc = m.battCharging ? kGreen : m.battPct <= 15 ? kRed : m.battPct <= 35 ? kAmber : kText;
+    int16_t bx = W - 23;
+    s.roundRect(bx, 5, 18, 10, 2, bc);
+    s.fillRect(bx + 18, 8, 2, 4, bc);
+    s.fillRect(bx + 2, 7, (int16_t)(14 * m.battPct / 100), 6, bc);
+    if (m.battCharging) {
+      s.fillTriangle(bx + 10, 3, bx + 6, 11, bx + 10, 10, kAmber);
+      s.fillTriangle(bx + 8, 10, bx + 12, 9, bx + 8, 17, kAmber);
+    }
+    char pc[6];
+    snprintf(pc, sizeof(pc), "%u%%", m.battPct);
+    s.textRight(fSmall(), bx - 3, 1, pc, bc);
+    rx = bx - 15 - Surface::textWidth(fSmall(), pc);
+  }
   icon(s, Glyph::Sd, rx, 10, 12, m.sd ? kGreen : kRed);
   rx -= 20;
   uint16_t gc = !m.gpsPresent ? kFaint : m.gpsFix ? kGreen : kAmber;
@@ -274,25 +350,26 @@ void drawStatusBar(gfx::Surface& s, const UiModel& m) {
   }
 }
 
-const char* const kTabs[] = {"HOME", "STATS", "BADGES", "SETUP"};
-const Glyph kTabIcons[] = {Glyph::Home, Glyph::Stats, Glyph::Trophy, Glyph::Gear};
+const char* const kTabs[] = {"HOME", "RADAR", "STATS", "LOOT", "SETUP"};
+const Glyph kTabIcons[] = {Glyph::Home, Glyph::Beacon, Glyph::Stats, Glyph::Trophy, Glyph::Gear};
+const int16_t kTabW = W / kTabCount;
 
 void drawNav(gfx::Surface& s) {
   int16_t y = H - kNavH;
   s.fillRect(0, y, W, kNavH, kBgBottom, 220);
   s.hline(0, y, W, kEdge);
-  int active = screen == Screen::TouchTest ? 3 : (int)screen;
-  float target = active * 80.0f;
+  int active = screen == Screen::TouchTest || screen == Screen::Share || screen == Screen::Clock || screen == Screen::Sync ||
+                       screen == Screen::WifiPick ? 4 : (int)screen;
+  float target = active * (float)kTabW;
   navX += (target - navX) * clampf(dt * 14, 0, 1);
-  s.fillRoundRect((int16_t)navX + 6, y + 5, 68, kNavH - 10, 8, kCyan, 35);
-  s.fillRoundRect((int16_t)navX + 22, y + 1, 36, 3, 1, kCyan);
-  s.glow(navX + 40, y + 2, 22, kCyan, 70);
-  for (int i = 0; i < 4; i++) {
+  s.fillRoundRect((int16_t)navX + 3, y + 4, kTabW - 6, kNavH - 8, 8, kCyan, 35);
+  s.fillRoundRect((int16_t)navX + kTabW / 2 - 16, y + 1, 32, 3, 1, kCyan);
+  s.glow(navX + kTabW / 2, y + 2, 20, kCyan, 70);
+  for (int i = 0; i < kTabCount; i++) {
     uint16_t c = i == active ? kCyan : kDim;
-    int16_t lw = Surface::textWidth(fSmall(), kTabs[i]);
-    int16_t x0 = i * 80 + (80 - (lw + 22)) / 2;
-    icon(s, kTabIcons[i], x0 + 8, y + kNavH / 2, 15, c);
-    s.text(fSmall(), x0 + 21, y + 10, kTabs[i], c);
+    int16_t cx = i * kTabW + kTabW / 2;
+    icon(s, kTabIcons[i], cx, y + 12, 13, c);
+    s.textCentered(fSmall(), cx, y + 19, kTabs[i], c);
   }
 }
 
@@ -323,6 +400,14 @@ void drawBubble(gfx::Surface& s, const char* text, int16_t tailX, int16_t y, uin
   s.text(fSmall(), x + 8, y + 2, text, kBgBottom, a);
 }
 
+void meter(gfx::Surface& s, int16_t x, int16_t y, Glyph g, const char* label, uint16_t level, uint16_t c) {
+  // level 0..1000 of *need*; the bar shows how satisfied the goblin is
+  float full = 1 - level / 1000.0f;
+  icon(s, g, x + 5, y + 5, 10, c);
+  s.text(fSmall(), x + 13, y - 3, label, kDim);
+  bar(s, x + 42, y + 2, 46, 5, full, full < 0.3f ? kRed : c);
+}
+
 void drawHome(gfx::Surface& s, const UiModel& m) {
   const Stats& st = *m.stats;
   bool scanning = companion.state(m.now) == CState::Scanning;
@@ -338,6 +423,8 @@ void drawHome(gfx::Surface& s, const UiModel& m) {
   const Frame* custom = m.packFrame ? m.packFrame(companion.state(m.now), m.now / 300) : nullptr;
   companion.draw(s, 80, 188, m.now, custom);
 
+  meter(s, 6, kBodyY + 6, Glyph::Heart, "FOOD", m.hunger, kGreen);
+  meter(s, 6, kBodyY + 18, Glyph::Star, "FUN", m.boredom, kAmber);
   if (quip && (int32_t)(quipUntil - m.now) > 0) drawBubble(s, quip, 84, kBodyY + 34, m.now);
 
   // level ring + XP
@@ -478,7 +565,8 @@ void drawStats(gfx::Surface& s, const UiModel& m) {
 // ---------------------------------------------------------------------------
 // Badges
 const int kPerPage = 18;
-int badgePages() { return (int)((ACHIEVEMENT_COUNT + kPerPage - 1) / kPerPage); }
+int trophyPages() { return (int)((ACHIEVEMENT_COUNT + kPerPage - 1) / kPerPage); }
+int lootPages() { return 2 + trophyPages(); }  // quests, wardrobe, trophies...
 
 void cellCenter(int i, int16_t& cx, int16_t& cy) {
   int col = i % 6, row = i / 6;
@@ -499,10 +587,13 @@ int wrap(const gfx::Font& f, const char* text, int16_t maxW, char out[][64], int
     memcpy(trial, cur, len);
     size_t tl = len;
     if (tl) trial[tl++] = ' ';
-    memcpy(trial + tl, p, wl);
-    tl += wl;
-    trial[tl] = 0;
-    if (len && Surface::textWidth(f, trial) > maxW) {
+    bool fits = tl + wl < sizeof(trial);  // also break when the buffer (not the pixels) is full
+    if (fits) {
+      memcpy(trial + tl, p, wl);
+      tl += wl;
+      trial[tl] = 0;
+    }
+    if (len && (!fits || Surface::textWidth(f, trial) > maxW)) {
       memcpy(out[lines++], cur, len + 1);
       memcpy(cur, p, wl);
       cur[wl] = 0;
@@ -545,18 +636,259 @@ void drawBadges(gfx::Surface& s, const UiModel& m) {
   s.text(fTitle(), 12, kBodyY + 6, "TROPHIES", kCyan);
   s.textRight(fBody(), W - 12, kBodyY + 1, hdr, kText);
   bar(s, 112, kBodyY + 10, 110, 6, (float)st.achieved.count() / ACHIEVEMENT_COUNT, kGoldC);
-  int first = badgePage * kPerPage;
+  int first = (lootPage - 2) * kPerPage;
   for (int i = 0; i < kPerPage && first + i < (int)ACHIEVEMENT_COUNT; i++) {
     int16_t cx, cy;
     cellCenter(i, cx, cy);
     medallion(s, cx, cy, 18, ACHIEVEMENTS[first + i], st.achieved[first + i], m.now);
   }
-  pageDots(s, badgePage, badgePages(), kBodyY + kBodyH - 6);
+}
+
+
+// ---------------------------------------------------------------------------
+// Loot: quests and wardrobe (trophies are drawBadges above)
+void drawQuests(gfx::Surface& s, const UiModel& m) {
+  s.text(fTitle(), 12, kBodyY + 6, "QUESTS", kCyan);
+  char b[48];
+  snprintf(b, sizeof(b), "%lu done", (unsigned long)m.stats->questsDone);
+  s.textRight(fSmall(), W - 12, kBodyY + 4, b, kDim);
+  const QuestBoard* qb = m.quests;
+  if (!qb || !qb->active) {
+    panel(s, 8, kBodyY + 30, W - 16, 120);
+    icon(s, Glyph::Trophy, W / 2, kBodyY + 64, 30, kGoldC);
+    s.textCentered(fBody(), W / 2, kBodyY + 86, "Board cleared!", kText);
+    uint32_t wait = qb && qb->nextAtMin > m.uptimeMin ? qb->nextAtMin - m.uptimeMin : 0;
+    snprintf(b, sizeof(b), wait ? "New quests in %lu min of scanning" : "New quests soon", (unsigned long)wait);
+    s.textCentered(fSmall(), W / 2, kBodyY + 110, b, kDim);
+    return;
+  }
+  for (int i = 0; i < 3; i++) {
+    const Quest& q = qb->q[i];
+    int16_t y = kBodyY + 26 + i * 52;
+    uint32_t prog = quests::progress(*m.stats, q);
+    bool done = q.done;
+    panel(s, 8, y, W - 16, 46, done ? kGreen : kEdge);
+    char d[48];
+    quests::describe(q, d, sizeof(d));
+    s.text(fBody(), 16, y + 3, d, done ? kGreen : kText);
+    bar(s, 16, y + 28, 200, 7, (float)prog / (q.target ? q.target : 1), done ? kGreen : kCyan);
+    snprintf(b, sizeof(b), "%lu / %u", (unsigned long)prog, q.target);
+    s.text(fSmall(), 222, y + 22, b, kDim);
+    if (done) {
+      icon(s, Glyph::Check, W - 26, y + 23, 16, kGreen);
+    } else {
+      snprintf(b, sizeof(b), "+%lu", (unsigned long)quests::reward(q));
+      s.textRight(fSmall(), W - 16, y + 22, b, kAmber);
+    }
+  }
+}
+
+const int kHatCols = 7;
+void hatCell(int i, int16_t& cx, int16_t& cy) {  // i = hat id (0 = none)
+  cx = 27 + (i % kHatCols) * 44;
+  cy = kBodyY + 50 + (i / kHatCols) * 46;
+}
+
+void drawWardrobe(gfx::Surface& s, const UiModel& m) {
+  s.text(fTitle(), 12, kBodyY + 6, "WARDROBE", kCyan);
+  s.textRight(fSmall(), W - 12, kBodyY + 4, "tap to wear", kDim);
+  uint8_t worn = m.settings->hat;
+  for (int i = 0; i <= hats::kCount; i++) {
+    int16_t cx, cy;
+    hatCell(i, cx, cy);
+    bool got = i == 0 || (m.hatMask & (1u << (i - 1)));
+    bool on = i == worn;
+    s.fillRoundRect(cx - 20, cy - 24, 40, 44, 7, on ? kPanelHi : kPanel, 230);
+    s.roundRect(cx - 20, cy - 24, 40, 44, 7, on ? kCyan : kEdge, on ? 255 : 150);
+    if (on) s.glow(cx, cy, 24, kCyan, 50);
+    if (i == 0) {
+      s.textCentered(fSmall(), cx, cy - 9, "none", kDim);
+    } else if (got) {
+      drawHat(s, (uint8_t)i, cx, cy + 11, 0.8f, m.now, false);
+    } else {
+      icon(s, Glyph::Lock, cx, cy - 2, 14, kFaint);
+    }
+  }
+  // what the selected / next locked hat needs
+  int show = worn;
+  for (int i = 1; i <= hats::kCount && !show; i++)
+    if (!(m.hatMask & (1u << (i - 1)))) show = -i;
+  if (show > 0) {
+    char b[48];
+    snprintf(b, sizeof(b), "Wearing: %s", hats::kHats[show - 1].name);
+    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 17, b, kGreen);
+  } else if (show < 0) {
+    char b[64];
+    snprintf(b, sizeof(b), "Next: %s - %s", hats::kHats[-show - 1].name, hats::kHats[-show - 1].how);
+    s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 17, b, kDim);
+  }
+}
+
+void drawLoot(gfx::Surface& s, const UiModel& m) {
+  if (lootPage == 0) drawQuests(s, m);
+  else if (lootPage == 1) drawWardrobe(s, m);
+  else drawBadges(s, m);
+  pageDots(s, lootPage, lootPages(), kBodyY + kBodyH - 6);
+}
+
+// ---------------------------------------------------------------------------
+// Radar: everything heard in the last minute. Distance from the centre = signal
+// strength (strong = close), angle = from the salted id (stable, but meaningless).
+int16_t sinTab[1024];  // sin over a quarter... full turn in 1024 steps, scaled by 16384
+void initSinTab() {
+  for (int i = 0; i < 1024; i++) sinTab[i] = (int16_t)lroundf(sinf(i * 6.2831853f / 1024) * 16384);
+}
+inline int32_t isin(uint32_t a) { return sinTab[a & 1023]; }        // a: 1024 per turn
+inline int32_t icos(uint32_t a) { return sinTab[(a + 256) & 1023]; }
+
+uint16_t blipColor(Radio r) {
+  switch (r) {
+    case Radio::WiFi: return kCyan;
+    case Radio::BLE: return kBlue;
+    case Radio::Thread: return kViolet;
+    default: return kMagenta;
+  }
+}
+
+void drawRadar(gfx::Surface& s, const UiModel& m) {
+  const int16_t cx = 106, cy = kBodyY + 92, R = 84;
+  // grid
+  s.fillCircle(cx, cy, R, gfx::hex(0x04161A), 200);
+  for (int i = 1; i <= 3; i++) s.ring(cx, cy, R * i / 3.0f, 1, kEdge, 160);
+  s.hline(cx - R, cy, 2 * R, kEdge, 90);
+  s.vline(cx, cy - R, 2 * R, kEdge, 90);
+  // sweep: bright leading edge and a fading trail
+  uint32_t sweep = (m.now * 1024 / 2600) & 1023;  // one turn per 2.6 s
+  for (int k = 0; k < 6; k++) {
+    uint32_t a0 = (sweep - k * 14) & 1023, a1 = (sweep - (k + 1) * 14) & 1023;
+    s.fillTriangle(cx, cy, cx + (int16_t)(isin(a0) * R / 16384), cy - (int16_t)(icos(a0) * R / 16384),
+                   cx + (int16_t)(isin(a1) * R / 16384), cy - (int16_t)(icos(a1) * R / 16384), kGreen,
+                   (uint8_t)(60 - k * 9));
+  }
+  s.line(cx, cy, cx + (int16_t)(isin(sweep) * R / 16384), cy - (int16_t)(icos(sweep) * R / 16384), kGreen);
+
+  // blips
+  uint16_t counts[5] = {0};
+  int8_t best = -127;
+  for (size_t i = 0; i < m.blipCount; i++) {
+    const Blip& b = m.blips[i];
+    if (!b.lastSeenMs) continue;
+    uint32_t age = m.now - b.lastSeenMs;
+    if (age > 60000) continue;
+    counts[(int)b.radio]++;
+    if (b.rssi > best) best = b.rssi;
+    int32_t rssi = b.rssi < -100 ? -100 : (b.rssi > -30 ? -30 : b.rssi);
+    int32_t dist = 10 + (-30 - rssi) * (R - 14) / 70;  // -30 dBm near the middle, -100 at the edge
+    uint32_t a = b.angle >> 2;                         // 4096 -> 1024 steps
+    int16_t bx = cx + (int16_t)(isin(a) * dist / 16384), by = cy - (int16_t)(icos(a) * dist / 16384);
+    uint32_t since = (sweep - a) & 1023;               // how long ago the sweep passed it
+    int32_t lit = 255 - (int32_t)since / 3;
+    int32_t fade = 255 - (int32_t)(age / 240);         // older sightings fade out over a minute
+    int32_t al = (lit < 90 ? 90 : lit) * (fade < 0 ? 0 : fade) / 255;
+    uint16_t c = blipColor(b.radio);
+    if (b.radio == Radio::Peer) {
+      s.glow(bx, by, 10, kMagenta, (uint8_t)al);
+      icon(s, Glyph::Goblin, bx, by, 11, kMagenta, (uint8_t)(al > 120 ? 255 : al * 2));
+    } else {
+      if (lit > 200) s.glow(bx, by, 5, c, (uint8_t)(al / 2));
+      s.fillCircle(bx, by, 1.6f, c, (uint8_t)al);
+    }
+  }
+
+  // legend
+  int16_t x = 206, y = kBodyY + 8;
+  s.text(fTitle(), x, y, "LIVE", kGreen);
+  s.text(fSmall(), x + 44, y + 1, "last 60 s", kDim);
+  struct { Radio r; const char* n; Glyph g; } rows[] = {{Radio::WiFi, "Wi-Fi", Glyph::Wifi},
+                                                        {Radio::BLE, "Bluetooth", Glyph::Ble},
+                                                        {Radio::Thread, "Mesh", Glyph::Mesh},
+                                                        {Radio::Peer, "Goblins", Glyph::Goblin}};
+  for (int i = 0; i < 4; i++) {
+    int16_t ry = y + 24 + i * 26;
+    uint16_t c = blipColor(rows[i].r);
+    icon(s, rows[i].g, x + 7, ry + 9, 12, c);
+    s.text(fSmall(), x + 18, ry + 1, rows[i].n, kDim);
+    char n[8];
+    snprintf(n, sizeof(n), "%u", counts[(int)rows[i].r]);
+    s.textRight(fBody(), W - 10, ry - 1, n, kText);
+  }
+  char b[24];
+  if (m.trackersNearby) snprintf(b, sizeof(b), "trackers near: %u", m.trackersNearby);
+  else if (best > -127) snprintf(b, sizeof(b), "loudest %d dBm", best);
+  else snprintf(b, sizeof(b), "listening...");
+  s.text(fSmall(), x, y + 132, b, m.trackersNearby ? kAmber : kDim);
+  if (m.scanning) {
+    snprintf(b, sizeof(b), "now: %s", m.scanning);
+    s.text(fSmall(), x, y + 148, b, radioColor(m.scanning));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Share card: a photo-friendly trading card with a QR code to the project.
+uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
+bool qrOk = false;
+char qrFor[96] = "";
+
+// QR code for `url` in a white box of about `box` px at (x, y), quiet zone included. Encodes
+// only when the URL changes. Returns the box size actually drawn (0 if it didn't fit).
+int16_t drawQr(gfx::Surface& s, const char* url, int16_t x, int16_t y, int16_t box) {
+  if (strcmp(qrFor, url) != 0) {
+    uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
+    snprintf(qrFor, sizeof(qrFor), "%s", url);
+    qrOk = qrcodegen_encodeText(qrFor, tmp, qr, qrcodegen_Ecc_MEDIUM, 1, 8, qrcodegen_Mask_AUTO, true);
+  }
+  if (!qrOk) return 0;
+  int n = qrcodegen_getSize(qr);
+  int mod = box / (n + 2);
+  if (mod < 1) mod = 1;
+  int16_t size = (int16_t)((n + 2) * mod);
+  s.fillRect(x, y, size, size, 0xFFFF);
+  for (int yy = 0; yy < n; yy++)
+    for (int xx = 0; xx < n; xx++)
+      if (qrcodegen_getModule(qr, xx, yy)) s.fillRect(x + (xx + 1) * mod, y + (yy + 1) * mod, mod, mod, 0x0000);
+  return size;
+}
+
+void drawShare(gfx::Surface& s, const UiModel& m) {
+  const Stats& st = *m.stats;
+  // card
+  s.fillRoundRect(6, kBodyY + 4, W - 12, kBodyH - 8, 10, gfx::hex(0x0A1C22), 245);
+  s.roundRect(6, kBodyY + 4, W - 12, kBodyH - 8, 10, kGoldC);
+  s.roundRect(8, kBodyY + 6, W - 16, kBodyH - 12, 9, kGoldC, 90);
+  // goblin with its hat
+  s.glow(62, kBodyY + 92, 56, kCyan, 70);
+  Companion::Look look;
+  look.scale = 1.5f;
+  look.hat = m.settings->hat;
+  Companion::drawSmall(s, 62, kBodyY + 150, m.now, look);
+  // name + level
+  s.text(fBig(), 120, kBodyY + 10, m.myName, kGreen);
+  char b[48];
+  snprintf(b, sizeof(b), "LV %u  %s", m.level, progression::title(m.level));
+  s.text(fSmall(), 121, kBodyY + 36, b, kAmber);
+  // stats
+  const struct { const char* k; uint32_t v; uint16_t c; } rows[] = {
+      {"Wi-Fi", st.wifiUnique, kCyan}, {"Bluetooth", st.bleUnique, kBlue}, {"Mesh", st.t154Unique, kViolet},
+      {"Goblins", st.peersMet, kMagenta}};
+  for (int i = 0; i < 4; i++) {
+    int16_t y = kBodyY + 56 + i * 17;
+    s.text(fSmall(), 121, y, rows[i].k, kDim);
+    formatCount(b, sizeof(b), rows[i].v);
+    s.textRight(fSmall(), 210, y, b, rows[i].c);
+  }
+  snprintf(b, sizeof(b), "%u / %u trophies", (unsigned)st.achieved.count(), (unsigned)ACHIEVEMENT_COUNT);
+  s.text(fSmall(), 121, kBodyY + 128, b, kGoldC);
+  // QR code (white quiet zone so phones can read it): the goblin's leaderboard page once it has
+  // synced, else the project site
+  const char* url = m.syncProfile[0] && m.stats->syncs ? m.syncProfile : m.shareUrl;
+  int16_t qx = W - 16 - 84, qy = kBodyY + 52;
+  if (int16_t size = drawQr(s, url, qx, qy, 84)) s.textCentered(fSmall(), qx + size / 2, qy + size + 3, "scan me", kDim);
+  s.textCentered(fSmall(), W / 2, kBodyY + kBodyH - 26, "NETWORK GOBLIN SCOUT  -  tap to close", kFaint);
 }
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 11;
+const int kRows = 14;
 const int16_t kRowH = 38;
 
 struct RowInfo { const char* label; const char* sub; };
@@ -571,6 +903,9 @@ const RowInfo kRowInfo[kRows] = {
     {"Turbo display", "faster screen; off if it glitches"},
     {"Sprite pack", "from the SD card"},
     {"Touch test", "check calibration"},
+    {"Share card", "show off your goblin"},
+    {"Sync & leaderboard", nullptr},
+    {"Clock", nullptr},
     {"About", nullptr},
 };
 
@@ -598,11 +933,37 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     if (y > kBodyY + kBodyH || y + kRowH < kBodyY) continue;
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
-    if (i == 10) {
+    if (i == 11) {
+      s.text(fBody(), 16, y + 1, r.label, kText);
+      char b[48];
+      if (m.syncSsid[0]) snprintf(b, sizeof(b), "via %s", m.syncSsid);
+      else snprintf(b, sizeof(b), "upload your hoard to the boards");
+      s.text(fSmall(), 16, y + 17, b, kDim);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+      continue;
+    }
+    if (i == 12) {
+      s.text(fBody(), 16, y + 1, r.label, kText);
+      char b[48];
+      if (m.localTime) {
+        clk::Civil c = clk::fromUnix(m.localTime);
+        if (m.clockGps)
+          snprintf(b, sizeof(b), "%02u:%02u from GPS (UTC%+d:%02u)", c.hour, c.minute, st.tzMin / 60,
+                   (unsigned)(abs(st.tzMin) % 60));
+        else
+          snprintf(b, sizeof(b), "%02u:%02u set by hand, lost at power-off", c.hour, c.minute);
+      } else {
+        snprintf(b, sizeof(b), "not set: day/night and seasonal hats wait");
+      }
+      s.text(fSmall(), 16, y + 17, b, m.localTime ? kDim : kAmber);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+      continue;
+    }
+    if (i == 13) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
-      snprintf(b, sizeof(b), "NG Scout fw %s", m.fwVersion);
+      snprintf(b, sizeof(b), "tap to rename  -  NG Scout fw %s", m.fwVersion);
       s.text(fSmall(), 16, y + 17, b, kDim);
       continue;
     }
@@ -619,7 +980,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     } else if (i == 8) {
       s.textRight(fSmall(), W - 34, y + 9, m.packName, kCyan);
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
-    } else if (i == 9) {
+    } else if (i == 9 || i == 10) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
     }
   }
@@ -649,6 +1010,72 @@ void drawTouchTest(gfx::Surface& s, const UiModel& m) {
     s.glow(tapX, tapY, 16, kRed, 120);
     s.hline(tapX - 12, tapY, 25, kRed);
     s.vline(tapX, tapY - 12, 25, kRed);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Set the clock: five spinners (- value +) and DONE.
+clk::Civil clockDraft = {2026, 1, 1, 12, 0};
+const int16_t kSpinW = 96, kSpinH = 56;
+void spinCell(int i, int16_t& x, int16_t& y) {  // 0 hour 1 minute 2 DONE / 3 day 4 month 5 year
+  x = 12 + (i % 3) * (kSpinW + 4);
+  y = kBodyY + 34 + (i / 3) * (kSpinH + 10);
+}
+
+void startClock(const UiModel& m) {
+  uint32_t t = m.localTime ? m.localTime : m.buildTime;
+  if (t) clockDraft = clk::fromUnix(t);
+  screen = Screen::Clock;
+  screenChangedAt = m.now;
+}
+
+void drawClock(gfx::Surface& s, const UiModel& m) {
+  header(s, "SET THE CLOCK", m.clockGps ? "GPS time: sets your UTC offset" : "no GPS: lost at power-off");
+  const char* labels[6] = {"HOUR", "MINUTE", nullptr, "DAY", "MONTH", "YEAR"};
+  unsigned vals[6] = {clockDraft.hour, clockDraft.minute, 0, clockDraft.day, clockDraft.month, clockDraft.year};
+  for (int i = 0; i < 6; i++) {
+    int16_t x, y;
+    spinCell(i, x, y);
+    if (i == 2) {
+      s.fillRoundRect(x, y + 10, kSpinW, kSpinH - 20, 14, kGreen);
+      s.textCentered(fBody(), x + kSpinW / 2, y + 17, "DONE", kBgBottom);
+      continue;
+    }
+    panel(s, x, y, kSpinW, kSpinH);
+    s.textCentered(fSmall(), x + kSpinW / 2, y + 2, labels[i], kDim);
+    char b[8];
+    snprintf(b, sizeof(b), i == 5 ? "%u" : "%02u", vals[i]);
+    s.textCentered(fBody(), x + kSpinW / 2, y + 22, b, kText);
+    s.textCentered(fBig(), x + 13, y + 16, "-", kCyan);
+    s.textCentered(fBig(), x + kSpinW - 13, y + 16, "+", kCyan);
+  }
+  s.textCentered(fSmall(), W / 2, kBodyY + 166, "for day/night, night naps and seasonal hats", kDim);
+}
+
+void tapClock(int16_t x, int16_t y, uint32_t now) {
+  for (int i = 0; i < 6; i++) {
+    int16_t cx, cy;
+    spinCell(i, cx, cy);
+    if (x < cx || x >= cx + kSpinW || y < cy || y >= cy + kSpinH) continue;
+    if (i == 2) {
+      if (hooks.setClock) hooks.setClock(clk::toUnix(clockDraft));
+      goTo(Screen::Setup, now);
+      say("Time noted!", now, 2500);
+      return;
+    }
+    int d = x < cx + kSpinW / 2 ? -1 : 1;
+    clk::Civil& c = clockDraft;
+    auto wrapAdd = [](int v, int dd, int lo, int hi) { v += dd; return v < lo ? hi : (v > hi ? lo : v); };
+    switch (i) {
+      case 0: c.hour = (uint8_t)wrapAdd(c.hour, d, 0, 23); break;
+      case 1: c.minute = (uint8_t)wrapAdd(c.minute, d, 0, 59); break;
+      case 3: c.day = (uint8_t)wrapAdd(c.day, d, 1, clk::daysInMonth(c.year, c.month)); break;
+      case 4: c.month = (uint8_t)wrapAdd(c.month, d, 1, 12); break;
+      case 5: c.year = (uint16_t)wrapAdd(c.year, d, 2024, 2099); break;
+    }
+    uint8_t dim = clk::daysInMonth(c.year, c.month);
+    if (c.day > dim) c.day = dim;
+    return;
   }
 }
 
@@ -685,7 +1112,11 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
   }
 }
 
-uint32_t overlayLength(OvType t) { return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : 3300; }
+uint32_t overlayLength(OvType t) {
+  if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
+  if (t == OvType::Sniff) return 5000;
+  return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
+}
 
 void startOverlay(uint32_t now) {
   const Overlay& o = overlays[0];
@@ -704,10 +1135,28 @@ void startOverlay(uint32_t now) {
       led(50, 50, 0, 600);
       companion.react(CState::Achievement, 3000, now);
       break;
+    case OvType::AchBatch:
+      emit(PKind::Spark, W / 2, 110, 30, kGoldC, 150, 1.4f);
+      sfx(kSfxAchievement);
+      led(50, 50, 0, 600);
+      companion.react(CState::Achievement, 3000, now);
+      break;
+    case OvType::Hat:
+      emit(PKind::Confetti, W / 2, 90, 30, 0, 140, 2.0f);
+      sfx(kSfxAchievement);
+      led(40, 0, 60, 800);
+      break;
     case OvType::Encounter:
       sfx(kSfxEncounter);
       led(60, 0, 50, 2000);
       companion.react(CState::Excited, 5000, now);
+      break;
+    case OvType::Sniff:
+      companion.react(CState::Searching, 2500, now);
+      break;
+    case OvType::Tracker:
+      sfx(kSfxAlert);
+      led(80, 0, 0, 3000);
       break;
   }
 }
@@ -766,12 +1215,14 @@ void drawEncounter(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now, 
   int16_t rx = (int16_t)(W + 50 - (W + 50 - (W / 2 + 52)) * meet);
   Companion::Look me;
   me.scale = 1.5f;
+  me.hat = m.settings->hat;
   Companion::drawSmall(s, lx, 168, now, me);
   Companion::Look them;
   them.scale = 1.5f;
   them.flip = true;
   them.tint = true;
   them.tintColor = gfx::hue(o.peerHue, 190, 255);
+  them.hat = o.peerHat;
   Companion::drawSmall(s, rx, 168, now + 333, them);
 
   if (t > 850) {  // sparks where they meet
@@ -802,6 +1253,138 @@ void drawEncounter(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now, 
                  o.isNew ? kGreen : kAmber, a8(255 * clampf(last, 0, 1)));
 }
 
+void drawHatOverlay(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, 0x0000, a8(225 * in));
+  rays(s, W / 2, 110, kMagenta, a8(25 * in), now / 3000.0f);
+  s.textCentered(fBig(), W / 2, 14, "NEW HAT!", kMagenta, a8(255 * in));
+  Companion::Look look;
+  look.scale = 1.1f;
+  look.hat = (uint8_t)o.value;
+  float pop = easeBack((t - 200) / 500.0f);
+  if (pop > 0.05f) {
+    look.alpha = a8(255 * clampf(pop, 0, 1));
+    Companion::drawGoblin(s, W / 2, 196, now, CState::Excited, look);
+  }
+  if (o.value >= 1 && o.value <= hats::kCount) {
+    s.textCentered(fBody(), W / 2, 200, hats::kHats[o.value - 1].name, kText, a8(255 * in));
+    s.textCentered(fSmall(), W / 2, 220, "wear it from LOOT > Wardrobe", kDim, a8(255 * in));
+  }
+}
+
+void drawAchBatch(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, 0x0000, a8(232 * in));
+  rays(s, W / 2, 110, kGoldC, a8(25 * in), now / 2500.0f);
+  char b[32];
+  snprintf(b, sizeof(b), "+%u ACHIEVEMENTS!", o.total);
+  s.textCentered(fBig(), W / 2, 22, b, kGoldC, a8(255 * in));
+  int n = o.idCount;
+  int cols = n < 6 ? n : 6;
+  for (int i = 0; i < n; i++) {
+    float pop = easeBack((t - 200 - i * 90) / 350.0f);
+    if (pop <= 0.02f) continue;
+    int col = i % 6, row = i / 6;
+    int16_t cx = W / 2 - (cols - 1) * 22 + col * 44, cy = 90 + row * 48;
+    medallion(s, cx, cy, 18 * pop, ACHIEVEMENTS[o.ids[i]], true, now);
+  }
+  if (o.total > o.idCount) {
+    snprintf(b, sizeof(b), "...and %u more", o.total - o.idCount);
+    s.textCentered(fSmall(), W / 2, 178, b, kDim, a8(255 * in));
+  }
+  s.textCentered(fSmall(), W / 2, 202, "see them all in LOOT", kDim, a8(255 * in));
+}
+
+void drawSniff(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now, const UiModel& m) {
+  uint8_t result = o.value & 0xFF, mine = (o.value >> 8) & 7, theirs = (o.value >> 16) & 7;
+  uint32_t xp = o.value >> 24;
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, gfx::hex(0x120A1E), a8(250 * in));
+  s.textCentered(fBig(), W / 2, 10, "SNIFF-OFF!", kAmber, a8(255 * in));
+
+  // the two goblins lean in and sniff (little bobs), noses towards each other
+  int16_t lx = 62, rx = W - 62, feet = 118;
+  float bobL = t < 2200 ? 2.5f * sinf(now / 70.0f) : 0, bobR = t < 2200 ? 2.5f * sinf(now / 70.0f + 1.7f) : 0;
+  Companion::Look me;
+  me.scale = 1.05f;
+  me.hat = m.settings->hat;
+  Companion::drawSmall(s, lx, (int16_t)(feet + bobL), now, me);
+  Companion::Look them;
+  them.scale = 1.05f;
+  them.flip = true;
+  them.tint = true;
+  them.tintColor = gfx::hue(o.peerHue, 190, 255);
+  them.hat = o.peerHat;
+  Companion::drawSmall(s, rx, (int16_t)(feet + bobR), now + 333, them);
+  if (t < 2200 && (now / 300) % 2) {  // sniff puffs
+    s.textCentered(fSmall(), lx + 40, 52, "sniff", kDim);
+    s.textCentered(fSmall(), rx - 40, 64, "sniff", kDim);
+  }
+  s.textCentered(fSmall(), lx, feet + 4, "YOU", kGreen, a8(255 * in));
+  s.textCentered(fSmall(), rx, feet + 4, o.peerName, gfx::hue(o.peerHue, 150, 255), a8(255 * in));
+
+  // hoard bars grow, then the verdict
+  float grow = easeOut((t - 500) / 1500.0f);
+  const int16_t base = 176, maxH = 120;
+  struct { int16_t x; uint8_t tier; uint16_t c; } bars[2] = {{W / 2 - 34, mine, kGreen},
+                                                            {W / 2 + 8, theirs, gfx::hue(o.peerHue, 170, 255)}};
+  bool decided = t > 2300;
+  for (int i = 0; i < 2; i++) {
+    int16_t h = (int16_t)(maxH * (bars[i].tier + 1) / 8 * grow);
+    bool winner = decided && ((i == 0 && result == sniff::kWin) || (i == 1 && result == sniff::kLose));
+    if (winner) s.glow(bars[i].x + 13, base - h, 22, kGoldC, 120);
+    s.fillRoundRect(bars[i].x, base - h, 26, h + 1, 5, winner ? kGoldC : bars[i].c, 220);
+  }
+  s.hline(W / 2 - 44, base + 1, 88, kEdge);
+  s.textCentered(fSmall(), lx, 140, sniff::tierName(mine), kDim, a8(255 * grow));
+  s.textCentered(fSmall(), rx, 140, sniff::tierName(theirs), kDim, a8(255 * grow));
+
+  if (decided) {
+    float pop = easeBack((t - 2300) / 450.0f);
+    const char* v = result == sniff::kWin ? "YOUR HOARD WINS!" : result == sniff::kDraw ? "DEAD HEAT!" : "THEIR HOARD WINS";
+    uint16_t c = result == sniff::kWin ? kGoldC : result == sniff::kDraw ? kCyan : kText;
+    s.textCentered(fBody(), W / 2, 186, v, c, a8(255 * clampf(pop, 0, 1)));
+    char b[32];
+    snprintf(b, sizeof(b), result == sniff::kLose ? "+%lu XP for showing up" : "+%lu XP", (unsigned long)xp);
+    s.textCentered(fSmall(), W / 2, 210, b, kDim, a8(255 * clampf(pop, 0, 1)));
+    if (t < 2400 && result == sniff::kWin && partCount < 30) emit(PKind::Confetti, W / 2, 120, 26, 0, 140, 2.0f);
+  }
+}
+
+// Tracker alert buttons
+const int16_t kTrkBtnY = 198, kTrkBtnH = 32;
+bool inMineBtn(int16_t x, int16_t y) { return y >= kTrkBtnY - 4 && x < W / 2 - 4; }
+bool inOkBtn(int16_t x, int16_t y) { return y >= kTrkBtnY - 4 && x > W / 2 + 4; }
+
+void drawTracker(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t kind = o.value & 0xFF, places = (o.value >> 8) & 0xFF;
+  uint32_t mins = o.value >> 16;
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, gfx::hex(0x1A0606), a8(250 * in));
+  // pulsing alarm rings around a tag
+  for (int i = 0; i < 3; i++) {
+    float ph = fmodf(now / 1400.0f + i / 3.0f, 1.0f);
+    s.ring(W / 2, 72, 14 + ph * 46, 2, kRed, a8(150 * (1 - ph) * in));
+  }
+  s.glow(W / 2, 72, 34, kRed, a8(90 * in));
+  s.fillRoundRect(W / 2 - 13, 58, 26, 28, 9, kText, a8(255 * in));
+  s.ring(W / 2, 66, 3.5f, 2, kBgBottom, a8(255 * in));
+  s.fillCircle(W / 2, 77, 3, kRed, a8(255 * in));
+  bool flash = (now / 400) % 2;
+  s.textCentered(fTitle(), W / 2, 10, "SOMETHING IS FOLLOWING YOU", flash ? kRed : kAmber, a8(255 * in));
+  s.textCentered(fBody(), W / 2, 104, trackers::kindName(kind), kText, a8(255 * in));
+  char b[64];
+  snprintf(b, sizeof(b), "with you for %lu min, through %u places", (unsigned long)mins, places);
+  s.textCentered(fSmall(), W / 2, 128, b, kAmber, a8(255 * in));
+  s.textCentered(fSmall(), W / 2, 148, "Not yours? Check your bag, pockets and car.", kDim, a8(255 * in));
+  s.textCentered(fSmall(), W / 2, 164, "Your phone can find it and play its sound.", kDim, a8(255 * in));
+  s.fillRoundRect(12, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kPanel, a8(240 * in));
+  s.roundRect(12, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kDim, a8(255 * in));
+  s.textCentered(fBody(), W / 4 + 2, kTrkBtnY + 5, "IT'S MINE", kText, a8(255 * in));
+  s.fillRoundRect(W / 2 + 8, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kAmber, a8(255 * in));
+  s.textCentered(fBody(), W * 3 / 4 - 2, kTrkBtnY + 5, "GOT IT", kBgBottom, a8(255 * in));
+}
+
 void drawOverlay(gfx::Surface& s, const UiModel& m) {
   if (!overlayCount) return;
   if (!overlayStarted) startOverlay(m.now);
@@ -817,6 +1400,10 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::LevelUp: drawLevelUp(s, o, t, m.now); break;
     case OvType::Achievement: drawAchievement(s, o, t, m.now); break;
     case OvType::Encounter: drawEncounter(s, o, t, m.now, m); break;
+    case OvType::Hat: drawHatOverlay(s, o, t, m.now); break;
+    case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
+    case OvType::Tracker: drawTracker(s, o, t, m.now); break;
+    case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
   }
 }
 
@@ -847,6 +1434,371 @@ void drawParticles(gfx::Surface& s) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// First run: disclaimer and naming. The same keyboard also types the Wi-Fi network name and
+// password for Goblin Sync (with a numbers/symbols layer and a cancel button).
+bool needName = false;
+Screen afterNaming = Screen::Home;
+enum class Kb : uint8_t { Name, Ssid, Pass };
+Kb kbMode = Kb::Name;
+char nameBuf[64] = "";          // what's being typed (goblin name, SSID or password)
+char pendingSsid[33] = "";      // Wi-Fi network chosen before typing its password
+bool caps = true;
+uint8_t kbLayer = 0;            // 0 letters, 1 numbers/symbols, 2 more symbols
+int lastKey = -1;
+uint32_t lastKeyAt = 0;
+uint32_t kbWarnUntil = 0;       // "8+ characters" hint on DONE
+
+const char* const kKeyRows[3][3] = {
+    {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
+    {"1234567890", "-/:;()$&@", ".,?!'\"_"},
+    {"[]{}#%^*+=", "\\|~<>`-/:", ".,?!'\"_"},
+};
+enum Special { kShift = 1000, kDel, kDice, kSpace, kOk, kCancel };
+
+size_t kbMax() { return kbMode == Kb::Name ? peercodec::kMaxName : kbMode == Kb::Ssid ? 32 : 63; }
+bool kbCancellable() { return kbMode != Kb::Name || afterNaming != Screen::Home; }
+
+struct KeyRect { int16_t x, y, w, h; int code; };
+int keys(KeyRect* out) {  // all keys, returns count
+  int n = 0;
+  const char* const* rows = kKeyRows[kbLayer];
+  for (int i = 0; i < 10; i++) out[n++] = {(int16_t)(6 + i * 31), 78, 29, 34, (uint8_t)rows[0][i]};
+  for (int i = 0; i < 9; i++) out[n++] = {(int16_t)(21 + i * 31), 116, 29, 34, (uint8_t)rows[1][i]};
+  out[n++] = {6, 154, 44, 34, kShift};
+  for (int i = 0; i < 7; i++) out[n++] = {(int16_t)(54 + i * 31), 154, 29, 34, (uint8_t)rows[2][i]};
+  out[n++] = {271, 154, 43, 34, kDel};
+  out[n++] = {6, 194, 74, 38, kDice};
+  out[n++] = {84, 194, 140, 38, kSpace};
+  out[n++] = {228, 194, 86, 38, kOk};
+  if (kbCancellable()) out[n++] = {0, 0, 40, 28, kCancel};
+  return n;
+}
+
+void drawNaming(gfx::Surface& s, const UiModel& m) {
+  char title[48];
+  if (kbMode == Kb::Ssid) snprintf(title, sizeof(title), "WI-FI NETWORK NAME");
+  else if (kbMode == Kb::Pass) snprintf(title, sizeof(title), "PASSWORD");
+  else snprintf(title, sizeof(title), "%s", afterNaming == Screen::Setup ? "RENAME YOUR GOBLIN" : "NAME YOUR GOBLIN");
+  s.textCentered(fTitle(), W / 2, 8, title, kCyan);
+  if (kbCancellable()) s.textCentered(fBody(), 16, 3, "x", kDim);
+  panel(s, 8, 28, W - 16, 42, kCyan);
+  int16_t tx = 22;
+  if (kbMode == Kb::Name) {
+    Companion::Look look;
+    look.scale = 0.55f;
+    look.aura = false;
+    look.hat = m.settings->hat;
+    Companion::drawSmall(s, 30, 70, m.now, look);
+    tx = W / 2 + 10;
+  }
+  const gfx::Font& f = kbMode == Kb::Name ? fBig() : fBody();
+  if (nameBuf[0]) {
+    // show the end of long text (passwords): drop characters from the front until it fits
+    const char* shown = nameBuf;
+    while (*shown && Surface::textWidth(f, shown) > W - 84) shown++;
+    int16_t end = kbMode == Kb::Name ? s.textCentered(f, tx, 36, shown, kGreen) : s.text(f, tx, 40, shown, kGreen);
+    if ((m.now / 450) % 2) s.fillRect(end + 2, 38, 2, 24, kGreen);
+  } else {
+    const char* hint = kbMode == Kb::Name ? "type a name, or roll the dice"
+                       : kbMode == Kb::Ssid ? "type the network name"
+                                            : "empty = open network";
+    if (kbMode == Kb::Name) s.textCentered(fBody(), tx, 40, hint, kFaint);
+    else s.text(fBody(), tx, 40, hint, kFaint);
+  }
+  char cnt[8];
+  snprintf(cnt, sizeof(cnt), "%u/%u", (unsigned)strlen(nameBuf), (unsigned)kbMax());
+  s.textRight(fSmall(), W - 14, 52, cnt, kDim);
+  if (kbMode == Kb::Pass && pendingSsid[0]) s.textRight(fSmall(), W - 14, 30, pendingSsid, kDim);
+  if ((int32_t)(kbWarnUntil - m.now) > 0) s.textRight(fSmall(), W - 14, 30, "8+ characters (or empty)", kRed);
+
+  KeyRect k[34];
+  int n = keys(k);
+  bool canFinish = nameBuf[0] || kbMode == Kb::Pass;
+  for (int i = 0; i < n; i++) {
+    if (k[i].code == kCancel) continue;
+    bool hot = k[i].code == lastKey && m.now - lastKeyAt < 150;
+    bool ok = k[i].code == kOk;
+    bool enabled = !ok || canFinish;
+    uint16_t edge = ok ? (enabled ? kGreen : kFaint) : (k[i].code == kShift && caps && !kbLayer ? kCyan : kEdge);
+    s.fillRoundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, hot ? kCyan : (ok && enabled ? gfx::dim(kGreen, 70) : kPanel), 235);
+    s.roundRect(k[i].x, k[i].y, k[i].w, k[i].h, 6, edge);
+    int16_t cx = k[i].x + k[i].w / 2, ty = k[i].y + (k[i].h - 20) / 2;
+    uint16_t tc = hot ? kBgBottom : kText;
+    switch (k[i].code) {
+      case kShift:
+        if (kbLayer) s.textCentered(fBody(), cx, ty, kbLayer == 1 ? "#+=" : "123", kDim);
+        else s.textCentered(fBody(), cx, ty, caps ? "AB" : "ab", caps ? kCyan : kDim);
+        break;
+      case kDel: s.textCentered(fBody(), cx, ty, "DEL", tc); break;
+      case kDice:
+        s.textCentered(fBody(), cx, ty, kbMode == Kb::Name ? "random" : kbLayer ? "ABC" : "123", tc);
+        break;
+      case kSpace: s.textCentered(fBody(), cx, ty, "space", kDim); break;
+      case kOk: s.textCentered(fBody(), cx, ty, kbMode == Kb::Ssid ? "NEXT" : "DONE", enabled ? kGreen : kFaint); break;
+      default: {
+        char c[2] = {(char)(kbLayer || caps || k[i].code < 'A' ? k[i].code : k[i].code + 32), 0};
+        s.textCentered(fBody(), cx, ty, c, tc);
+      }
+    }
+  }
+}
+
+void startKeyboard(Kb mode, Screen returnTo, const char* current);
+
+void finishNaming(uint32_t now) {
+  size_t len = strlen(nameBuf);
+  if (kbMode == Kb::Pass) {  // passwords keep their spaces; WPA needs 8-63 characters, open = empty
+    if (len && len < 8) {
+      kbWarnUntil = now + 2500;
+      return;
+    }
+    if (hooks.setWifi) hooks.setWifi(pendingSsid, nameBuf);
+    memset(nameBuf, 0, sizeof(nameBuf));  // don't leave the password lying around in RAM
+    sfx(kSfxQuest);
+    screen = afterNaming;
+    screenChangedAt = now;
+    return;
+  }
+  while (len && nameBuf[len - 1] == ' ') nameBuf[--len] = 0;  // trim
+  if (!len) return;
+  if (kbMode == Kb::Ssid) {
+    snprintf(pendingSsid, sizeof(pendingSsid), "%.32s", nameBuf);  // kbMax() is 32 for SSIDs
+    startKeyboard(Kb::Pass, afterNaming, "");
+    return;
+  }
+  if (hooks.named) hooks.named(nameBuf);
+  sfx(kSfxQuest);
+  screen = afterNaming;
+  screenChangedAt = now;
+  companion.react(CState::Excited, 2000, now);
+  static char hello[40];
+  snprintf(hello, sizeof(hello), "I'm %.12s!", nameBuf);  // names are 12 characters max
+  say(hello, now + 300, 3500);
+}
+
+void tapNaming(int16_t x, int16_t y, uint32_t now) {
+  KeyRect k[34];
+  int n = keys(k);
+  for (int i = 0; i < n; i++) {
+    if (x < k[i].x || x >= k[i].x + k[i].w || y < k[i].y || y >= k[i].y + k[i].h) continue;
+    int code = k[i].code;
+    lastKey = code;
+    lastKeyAt = now;
+    sfx(kSfxTap);
+    size_t len = strlen(nameBuf);
+    bool text = kbMode != Kb::Name;
+    switch (code) {
+      case kCancel:
+        memset(nameBuf, 0, sizeof(nameBuf));
+        screen = afterNaming;
+        screenChangedAt = now;
+        break;
+      case kShift:
+        if (kbLayer) kbLayer = kbLayer == 1 ? 2 : 1;
+        else caps = !caps;
+        break;
+      case kDel:
+        if (len) nameBuf[len - 1] = 0;
+        if (!text) caps = len <= 1;
+        break;
+      case kDice:
+        if (text) {
+          kbLayer = kbLayer ? 0 : 1;
+        } else {
+          char gen[peercodec::kMaxName + 1];
+          peercodec::nameFor(rnd(), gen, sizeof(gen));
+          snprintf(nameBuf, sizeof(nameBuf), "%s", gen);
+          caps = false;
+        }
+        break;
+      case kSpace:
+        if (text ? len < kbMax() : (len && len < kbMax() && nameBuf[len - 1] != ' ')) {
+          nameBuf[len] = ' ';
+          nameBuf[len + 1] = 0;
+          if (!text) caps = true;
+        }
+        break;
+      case kOk: finishNaming(now); break;
+      default:
+        if (len < kbMax()) {
+          bool letter = !kbLayer && code >= 'A' && code <= 'Z';
+          nameBuf[len] = (char)(letter && !caps ? code + 32 : code);
+          nameBuf[len + 1] = 0;
+          if (!text) caps = false;  // names: capital first letter, then lowercase; text: caps stays put
+        }
+    }
+    return;
+  }
+}
+
+void startKeyboard(Kb mode, Screen returnTo, const char* current) {
+  kbMode = mode;
+  afterNaming = returnTo;
+  snprintf(nameBuf, sizeof(nameBuf), "%s", current ? current : "");
+  caps = mode == Kb::Name ? !nameBuf[0] : false;
+  kbLayer = 0;
+  kbWarnUntil = 0;
+  screen = Screen::Naming;
+}
+
+void startNaming(Screen returnTo, const char* current) { startKeyboard(Kb::Name, returnTo, current); }
+
+// ---------------------------------------------------------------------------
+// Goblin Sync: pick a Wi-Fi network, press Sync, see your rank. The QR code opens the goblin's
+// page on the leaderboard site.
+const int16_t kSyncWifiY = kBodyY + 26, kSyncBtnY = kBodyY + 72, kSyncColW = 200;
+const int16_t kForgetX = 222, kForgetY = kBodyY + kBodyH - 22, kForgetW = 90, kForgetH = 20;
+uint32_t forgetArmedUntil = 0;  // "Remove me" needs a second tap within a few seconds
+const int kPickRows = 5;
+const int16_t kPickY = kBodyY + 26, kPickH = 26;
+
+void signalBars(gfx::Surface& s, int16_t x, int16_t y, int8_t rssi, uint16_t c) {
+  int bars = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1;
+  for (int i = 0; i < 4; i++) s.fillRect(x + i * 4, y + 9 - i * 3, 3, 3 + i * 3, c, i < bars ? 255 : 60);
+}
+
+void drawSync(gfx::Surface& s, const UiModel& m) {
+  header(s, "GOBLIN SYNC", "leaderboard");
+  bool busy = m.sync == UiModel::Sync::Busy;
+  // Wi-Fi network
+  panel(s, 8, kSyncWifiY, kSyncColW, 38);
+  icon(s, Glyph::Wifi, 22, kSyncWifiY + 19, 14, m.syncSsid[0] ? kCyan : kFaint);
+  s.text(fSmall(), 36, kSyncWifiY + 1, "WI-FI", kDim);
+  if (m.syncSsid[0]) s.text(fBody(), 36, kSyncWifiY + 14, m.syncSsid, kText);
+  else s.text(fBody(), 36, kSyncWifiY + 14, "tap to pick", kAmber);
+  icon(s, Glyph::Chevron, kSyncColW - 6, kSyncWifiY + 19, 10, kCyan);
+  // the button
+  bool can = m.syncSsid[0] && !busy;
+  s.fillRoundRect(8, kSyncBtnY, kSyncColW, 40, 20, can ? kGreen : kPanel, can ? 255 : 220);
+  if (!can) s.roundRect(8, kSyncBtnY, kSyncColW, 40, 20, kEdge);
+  if (busy) {
+    for (int i = 0; i < 8; i++) {
+      float a = i * kPi / 4 + m.now / 160.0f;
+      uint8_t al = (uint8_t)(255 * ((i + (m.now / 120)) % 8) / 8);
+      s.fillCircle((int16_t)(30 + 8 * cosf(a)), (int16_t)(kSyncBtnY + 20 + 8 * sinf(a)), 2, kCyan, al);
+    }
+    s.textCentered(fBody(), 8 + kSyncColW / 2 + 10, kSyncBtnY + 9, "SYNCING...", kCyan);
+  } else {
+    s.textCentered(fBody(), 8 + kSyncColW / 2, kSyncBtnY + 9, "SYNC NOW", can ? kBgBottom : kFaint);
+  }
+  // what happened
+  uint16_t mc = m.sync == UiModel::Sync::Done ? kGreen : m.sync == UiModel::Sync::Failed ? kRed : busy ? kCyan : kDim;
+  const char* msg = m.syncMsg[0] ? m.syncMsg : m.syncSsid[0] ? "Ready when you are." : "Pick your Wi-Fi first.";
+  s.text(fSmall(), 10, kBodyY + 118, msg, mc);
+  if (m.syncMotd[0]) {
+    char lines[2][64];
+    int n = wrap(fSmall(), m.syncMotd, kSyncColW, lines, 2);
+    for (int i = 0; i < n; i++) s.text(fSmall(), 10, kBodyY + 136 + i * 15, lines[i], kDim);
+  }
+  // the goblin's page
+  if (m.syncProfile[0]) {
+    int16_t size = drawQr(s, m.syncProfile, 218, kSyncWifiY, 94);
+    if (size) {
+      s.textCentered(fSmall(), 218 + size / 2, kSyncWifiY + size + 3, "your goblin", kDim);
+      s.textCentered(fSmall(), 218 + size / 2, kSyncWifiY + size + 17, "online", kDim);
+    }
+  }
+  s.text(fSmall(), 10, kBodyY + kBodyH - 18, "counts only, never names or places", kFaint);
+  // leave the leaderboard: tap once to arm, again to confirm
+  if (m.syncRegistered && !busy) {
+    bool armed = (int32_t)(forgetArmedUntil - m.now) > 0;
+    s.fillRoundRect(kForgetX, kForgetY, kForgetW, kForgetH, 10, armed ? kRed : kPanel, armed ? 255 : 220);
+    s.roundRect(kForgetX, kForgetY, kForgetW, kForgetH, 10, armed ? kRed : kEdge);
+    s.textCentered(fSmall(), kForgetX + kForgetW / 2, kForgetY + 2, armed ? "tap to confirm" : "remove me", armed ? kText : kDim);
+  }
+}
+
+void tapSync(int16_t x, int16_t y, const UiModel& m) {
+  if (m.syncRegistered && m.sync != UiModel::Sync::Busy && x >= kForgetX - 4 && y >= kForgetY - 6) {
+    if ((int32_t)(forgetArmedUntil - m.now) > 0) {
+      forgetArmedUntil = 0;
+      if (hooks.forgetMe) hooks.forgetMe();
+    } else {
+      forgetArmedUntil = m.now + 4000;
+    }
+    return;
+  }
+  if (x > kSyncColW + 8) return;
+  if (y >= kSyncWifiY && y < kSyncWifiY + 38) {
+    if (m.sync != UiModel::Sync::Busy) goTo(Screen::WifiPick, m.now);
+  } else if (y >= kSyncBtnY && y < kSyncBtnY + 40 && m.syncSsid[0] && m.sync != UiModel::Sync::Busy) {
+    if (hooks.syncNow) hooks.syncNow();
+  }
+}
+
+void drawWifiPick(gfx::Surface& s, const UiModel& m) {
+  header(s, "PICK YOUR WI-FI", "to sync over");
+  int rows = m.netCount < (size_t)kPickRows ? (int)m.netCount : kPickRows;
+  for (int i = 0; i <= rows; i++) {
+    int16_t y = kPickY + i * kPickH;
+    panel(s, 8, y, W - 16, kPickH - 3);
+    if (i == rows) {
+      s.text(fBody(), 18, y + 1, "Other network...", kCyan);
+      s.textRight(fSmall(), W - 18, y + 4, "type its name", kDim);
+      break;
+    }
+    const WifiChoice& w = m.nets[i];
+    s.text(fBody(), 18, y + 1, w.ssid, kText);
+    if (!w.open) icon(s, Glyph::Lock, W - 46, y + 11, 10, kDim);
+    signalBars(s, W - 34, y + 4, w.rssi, kCyan);
+  }
+  if (!rows) s.textCentered(fSmall(), W / 2, kPickY + kPickH + 6, "listening for networks... they appear as scans run", kDim);
+}
+
+void tapWifiPick(int16_t y, const UiModel& m) {
+  int rows = m.netCount < (size_t)kPickRows ? (int)m.netCount : kPickRows;
+  int i = (y - kPickY) / kPickH;
+  if (y < kPickY || i > rows) return;
+  if (i == rows) {
+    startKeyboard(Kb::Ssid, Screen::Sync, "");
+    return;
+  }
+  snprintf(pendingSsid, sizeof(pendingSsid), "%s", m.nets[i].ssid);
+  if (m.nets[i].open) {
+    if (hooks.setWifi) hooks.setWifi(pendingSsid, "");
+    goTo(Screen::Sync, m.now);
+  } else {
+    startKeyboard(Kb::Pass, Screen::Sync, "");
+  }
+}
+
+void drawDisclaimer(gfx::Surface& s, const UiModel& m) {
+  s.textCentered(fTitle(), W / 2, 8, "BEFORE WE START", kCyan);
+  panel(s, 8, 28, W - 16, 166);
+  static const char* const kParas[] = {
+      "NG Scout passively listens to Wi-Fi, Bluetooth and Zigbee/Thread signals around you. It never "
+      "connects to, decodes or interferes with anyone's networks or devices, and only keeps scrambled IDs "
+      "and counts.",
+      "Rules about radio listening differ between countries. You are responsible for using it legally "
+      "and respectfully.",
+      "A hobby project, provided as-is with no warranty."};
+  int16_t y = 33;
+  for (const char* p : kParas) {
+    char lines[7][64];
+    int n = wrap(fSmall(), p, W - 36, lines, 7);
+    for (int i = 0; i < n; i++, y += 15) s.text(fSmall(), 18, y, lines[i], kText);
+    y += 6;
+  }
+  float pulse = 0.5f + 0.5f * sinf(m.now / 400.0f);
+  s.glow(W / 2, 214, 90, kCyan, a8(40 + 40 * pulse));
+  s.fillRoundRect(60, 200, W - 120, 32, 16, kCyan);
+  s.textCentered(fBody(), W / 2, 205, "I UNDERSTAND", kBgBottom);
+}
+
+void tapDisclaimer(int16_t x, int16_t y, uint32_t now) {
+  if (x < 60 || x > W - 60 || y < 196 || y > 236) return;
+  sfx(kSfxTap);
+  if (hooks.agreed) hooks.agreed();
+  if (needName) {
+    startNaming(Screen::Home, "");
+  } else {
+    screen = Screen::Home;
+    screenChangedAt = now;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Input
 void goTo(Screen sc, uint32_t now) {
@@ -874,15 +1826,29 @@ void toggleSetting(int row, const UiModel& m) {
 
 void onTap(int16_t x, int16_t y, const UiModel& m) {
   uint32_t now = m.now;
-  if (overlayCount) {  // tap skips the current celebration
-    overlayStart = now - overlayLength(overlays[0].type) + 200;
+  if (overlayCount && screen != Screen::Disclaimer && screen != Screen::Naming) {
+    if (overlays[0].type == OvType::Tracker) {  // needs an answer, not a skip
+      bool mine = inMineBtn(x, y);
+      if (!mine && !inOkBtn(x, y)) return;
+      sfx(kSfxTap);
+      if (mine && hooks.trackerMine) hooks.trackerMine();
+      if (mine) say("Phew, it's ours.", now + 400, 3000);
+    }
+    overlayStart = now - overlayLength(overlays[0].type) + 200;  // tap skips the celebration
     return;
   }
   sfx(kSfxTap);
+  if (screen == Screen::Disclaimer) { tapDisclaimer(x, y, now); return; }
+  if (screen == Screen::Naming) { tapNaming(x, y, now); return; }
+  if (screen == Screen::Share) {  // tap anywhere closes the card
+    goTo(Screen::Home, now);
+    return;
+  }
   if (y >= H - kNavH) {
-    int tab = x / 80;
-    if (tab == 1 && screen == Screen::Stats) statsPage ^= 1;
-    else if (tab == 2 && screen == Screen::Badges) badgePage = (badgePage + 1) % badgePages();
+    int tab = x / kTabW;
+    if (tab >= kTabCount) tab = kTabCount - 1;
+    if ((Screen)tab == Screen::Stats && screen == Screen::Stats) statsPage ^= 1;
+    else if ((Screen)tab == Screen::Loot && screen == Screen::Loot) { lootPage = (lootPage + 1) % lootPages(); badgeDetail = -1; }
     goTo((Screen)tab, now);
     return;
   }
@@ -897,12 +1863,27 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
       }
       break;
     case Screen::Stats: statsPage ^= 1; break;
-    case Screen::Badges: {
+    case Screen::Loot: {
       if (badgeDetail >= 0) { badgeDetail = -1; break; }
+      if (lootPage == 1) {  // wardrobe: wear an unlocked hat
+        for (int i = 0; i <= hats::kCount; i++) {
+          int16_t cx, cy;
+          hatCell(i, cx, cy);
+          if (abs(x - cx) > 21 || abs(y - cy) > 23) continue;
+          if (i > 0 && !(m.hatMask & (1u << (i - 1)))) { sfx(kSfxTap); return; }
+          m.settings->hat = (uint8_t)i;
+          companion.react(CState::Excited, 1200, now);
+          if (hooks.hat) hooks.hat((uint8_t)i);
+          if (hooks.settingsChanged) hooks.settingsChanged();
+          return;
+        }
+        break;
+      }
+      if (lootPage < 2) break;
       for (int i = 0; i < kPerPage; i++) {
         int16_t cx, cy;
         cellCenter(i, cx, cy);
-        int idx = badgePage * kPerPage + i;
+        int idx = (lootPage - 2) * kPerPage + i;
         if (idx < (int)ACHIEVEMENT_COUNT && abs(x - cx) < 24 && abs(y - cy) < 24) { badgeDetail = idx; return; }
       }
       break;
@@ -927,31 +1908,54 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
       } else if (row == 9) {
         tapX = tapY = -1;
         screen = Screen::TouchTest;
+      } else if (row == 10) {
+        screen = Screen::Share;
+        screenChangedAt = now;
+      } else if (row == 11) {
+        goTo(Screen::Sync, now);
+      } else if (row == 12) {
+        startClock(m);
+      } else if (row == 13) {
+        startNaming(Screen::Setup, m.myName);
       } else {
         toggleSetting(row, m);
       }
       break;
     }
     case Screen::TouchTest: tapX = x; tapY = y; break;
+    case Screen::Clock: tapClock(x, y, now); break;
+    case Screen::Sync: tapSync(x, y, m); break;
+    case Screen::WifiPick: tapWifiPick(y, m); break;
+    default: break;
+  }
+}
+
+void onLongPress(int16_t x, int16_t y, uint32_t now) {
+  if (overlayCount) return;
+  if (screen == Screen::Home && x < 150 && y > 60) {  // hold the goblin: show its card
+    screen = Screen::Share;
+    screenChangedAt = now;
+    sfx(kSfxQuest);
   }
 }
 
 void onSwipe(int dir, uint32_t now) {  // dir +1 = finger moved left (next)
   if (overlayCount) return;
   if (screen == Screen::Stats) { statsPage = dir > 0 ? 1 : 0; return; }
-  if (screen == Screen::Badges) {
+  if (screen == Screen::Loot) {
     badgeDetail = -1;
-    badgePage = (badgePage + dir + badgePages()) % badgePages();
+    lootPage = (lootPage + dir + lootPages()) % lootPages();
     return;
   }
   int next = (int)screen + dir;
-  if (screen != Screen::TouchTest && next >= 0 && next <= 3) goTo((Screen)next, now);
+  if ((int)screen < kTabCount && next >= 0 && next < kTabCount) goTo((Screen)next, now);
 }
 
 }  // namespace
 
 // ---------------------------------------------------------------------------
 void begin(const Hooks& h, uint16_t* bgBuffer) {
+  initSinTab();
   hooks = h;
   bgCache = bgBuffer;
   bgReady = false;
@@ -966,13 +1970,24 @@ void begin(const Hooks& h, uint16_t* bgBuffer) {
 
 Companion& pet() { return companion; }
 
+void startOnboarding(bool disclaimer, bool name) {
+  needName = name;
+  if (disclaimer) screen = Screen::Disclaimer;
+  else if (name) startNaming(Screen::Home, "");
+}
+
+bool onboarding() { return screen == Screen::Disclaimer || (screen == Screen::Naming && afterNaming == Screen::Home); }
+
 bool animating() { return overlayCount > 0 || bannerCount > 0 || partCount > 0; }
+
+Profile prof;
+const Profile& profile() { return prof; }
 
 void debugShow(int sc, int page) {
   screen = (Screen)sc;
-  statsPage = sc == 1 ? page : 0;
-  badgePage = sc == 2 ? page : 0;
-  if (sc == 3) setupScroll = setupScrollTarget = (float)page;
+  statsPage = screen == Screen::Stats ? page : 0;
+  lootPage = screen == Screen::Loot ? page : 0;
+  if (screen == Screen::Setup) setupScroll = setupScrollTarget = (float)page;
   badgeDetail = -1;
   screenChangedAt = 0;
 }
@@ -997,6 +2012,7 @@ void onEvent(const UiEvent& e, uint32_t now) {
     snprintf(o.peerName, sizeof(o.peerName), "%s", e.peerName);
     o.peerLevel = e.peerLevel;
     o.peerHue = e.peerHue;
+    o.peerHat = e.peerHat;
     o.isNew = e.type == EventType::PeerNew;
   };
   switch (e.type) {
@@ -1038,7 +2054,67 @@ void onEvent(const UiEvent& e, uint32_t now) {
       sfx(kSfxChannel);
       break;
     case EventType::LevelUp: overlay(OvType::LevelUp); break;
-    case EventType::Achievement: overlay(OvType::Achievement); break;
+    case EventType::Achievement: {
+      // More than two queued? Fold the rest into one "+N achievements" card.
+      int pending = 0;
+      for (int i = overlayStarted ? 1 : 0; i < overlayCount; i++)
+        if (overlays[i].type == OvType::Achievement || overlays[i].type == OvType::AchBatch) pending++;
+      if (pending < 2) { overlay(OvType::Achievement); break; }
+      Overlay* batch = nullptr;
+      for (int i = overlayStarted ? 1 : 0; i < overlayCount; i++)
+        if (overlays[i].type == OvType::AchBatch) batch = &overlays[i];
+      if (!batch) {
+        if (overlayCount == 6) break;
+        batch = &overlays[overlayCount++];
+        batch->type = OvType::AchBatch;
+        batch->idCount = 0;
+        batch->total = 0;
+      }
+      if (batch->idCount < 12) batch->ids[batch->idCount++] = (uint8_t)e.value;
+      batch->total++;
+      break;
+    }
+    case EventType::QuestDone:
+      banner(Glyph::Check, kGreen);
+      companion.react(CState::Excited, 1800, now);
+      emit(PKind::Spark, 92, 90, 14, kGreen, 90, 1.0f);
+      say("Quest complete!", now, 2500);
+      sfx(kSfxQuest);
+      led(0, 60, 0, 300);
+      break;
+    case EventType::BoardCleared:
+      banner(Glyph::Trophy, kGoldC);
+      emit(PKind::Confetti, W / 2, 60, 30, 0, 140, 2.0f);
+      sfx(kSfxLevelUp);
+      break;
+    case EventType::NewQuests:
+      banner(Glyph::Trophy, kCyan);
+      break;
+    case EventType::HatUnlocked: overlay(OvType::Hat); break;
+    case EventType::Synced:
+      banner(Glyph::Trophy, kGreen);
+      companion.react(CState::Excited, 2000, now);
+      emit(PKind::Confetti, W / 2, 60, 24, 0, 130, 1.8f);
+      say("I'm famous!", now + 400, 3000);
+      sfx(kSfxQuest);
+      break;
+    case EventType::SniffOff:
+      overlay(OvType::Sniff);
+      break;
+    case EventType::TrackerAlert:
+      // Jumps the queue: safety first, celebrations can wait.
+      if (overlayCount == 6) overlayCount--;
+      overlay(OvType::Tracker);
+      if (overlayCount > 1 && !overlayStarted) {
+        Overlay tmp = overlays[overlayCount - 1];
+        for (int i = overlayCount - 1; i > 0; i--) overlays[i] = overlays[i - 1];
+        overlays[0] = tmp;
+      } else if (overlayCount > 2) {  // one is on screen: go right after it
+        Overlay tmp = overlays[overlayCount - 1];
+        for (int i = overlayCount - 1; i > 1; i--) overlays[i] = overlays[i - 1];
+        overlays[1] = tmp;
+      }
+      break;
     case EventType::PeerNew:
     case EventType::PeerReunion:
       overlay(OvType::Encounter);
@@ -1084,7 +2160,8 @@ void onTouch(bool down, int16_t x, int16_t y, const UiModel& m) {
     } else if (abs(dx) > 45 && abs(dx) > abs(dy) * 2) {
       onSwipe(dx < 0 ? 1 : -1, m.now);
     } else if (abs(dx) < 14 && abs(dy) < 14) {
-      onTap(downX, downY, m);
+      if (m.now - downAt > 700) onLongPress(downX, downY, m.now);
+      else onTap(downX, downY, m);
     }
   }
 }
@@ -1097,11 +2174,26 @@ void render(gfx::Surface& s, const UiModel& m) {
   if (!quip || (int32_t)(m.now - quipUntil) > 0) {
     if ((int32_t)(m.now - nextIdleQuip) > 0 && companion.state(m.now) != CState::Sleeping) {
       if (m.nearbyCount) say("I sense another goblin...", m.now);
+      else if (m.battPresent && !m.battCharging && m.battPct <= 15) say(pick(kLowBattQuips, 3), m.now);
+      else if (m.mood == Mood::Starving || m.mood == Mood::Hungry) say(pick(kHungryQuips, 4), m.now);
+      else if (m.mood == Mood::Bored) say(pick(kBoredQuips, 4), m.now);
+      else if (m.mood == Mood::Happy && (rnd() & 1)) say(pick(kHappyQuips, 4), m.now);
       else say(pick(kIdleQuips, 8), m.now);
     }
   }
 
+  uint32_t t0 = hooks.micros ? hooks.micros() : 0;
+  companion.setHat(m.settings->hat);
+  companion.setDroopy(m.mood == Mood::Hungry || m.mood == Mood::Starving ||
+                      (m.battPresent && !m.battCharging && m.battPct <= 15));
   drawBackground(s, m);
+  uint32_t t1 = hooks.micros ? hooks.micros() : 0;
+  if (screen == Screen::Disclaimer || screen == Screen::Naming) {
+    if (screen == Screen::Disclaimer) drawDisclaimer(s, m);
+    else drawNaming(s, m);
+    drawParticles(s);
+    return;
+  }
 
   // content slides in after a tab change
   float slide = 1 - easeOut((m.now - screenChangedAt) / 260.0f);
@@ -1110,19 +2202,35 @@ void render(gfx::Surface& s, const UiModel& m) {
   switch (screen) {
     case Screen::Home: drawHome(s, m); break;
     case Screen::Stats: drawStats(s, m); break;
-    case Screen::Badges: drawBadges(s, m); break;
+    case Screen::Radar: drawRadar(s, m); break;
+    case Screen::Loot: drawLoot(s, m); break;
+    case Screen::Share: drawShare(s, m); break;
     case Screen::Setup: drawSetup(s, m); break;
     case Screen::TouchTest: drawTouchTest(s, m); break;
+    case Screen::Clock: drawClock(s, m); break;
+    case Screen::Sync: drawSync(s, m); break;
+    case Screen::WifiPick: drawWifiPick(s, m); break;
+    case Screen::Disclaimer:
+    case Screen::Naming: break;  // drawn full-screen above
   }
   s.offset(0, 0);
   if (slide > 0.01f) s.fillRect(0, kBodyY, W, kBodyH, kBgBottom, a8(200 * slide));
+  uint32_t t2 = hooks.micros ? hooks.micros() : 0;
 
   drawStatusBar(s, m);
   drawNav(s);
-  if (screen == Screen::Badges && badgeDetail >= 0) drawBadgeDetail(s, m);
+  uint32_t t3 = hooks.micros ? hooks.micros() : 0;
+  if (screen == Screen::Loot && badgeDetail >= 0) drawBadgeDetail(s, m);
   drawBanner(s, m.now);
   drawOverlay(s, m);
   drawParticles(s);
+  if (hooks.micros) {
+    uint32_t t4 = hooks.micros();
+    prof.background = t1 - t0;
+    prof.screen = t2 - t1;
+    prof.chrome = t3 - t2;
+    prof.overlays = t4 - t3;
+  }
 }
 
 void splash(gfx::Surface& s, uint32_t now, const char* line) {

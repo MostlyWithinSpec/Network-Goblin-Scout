@@ -5,6 +5,7 @@
 #include <esp_random.h>
 #include <time.h>
 #include "../hal/Aht20.h"
+#include "../hal/Battery.h"
 #include "../hal/Display.h"
 #include "../hal/Fx.h"
 #include "../hal/Gps.h"
@@ -134,11 +135,13 @@ void checkI2c() {
   // The schematic says SDA 9 / SCL 8; the vendor's Bruce config lists them the other
   // way round. Try the schematic first, then swapped, and report which one answered.
   const int orders[2][2] = {{PIN_I2C_SDA, PIN_I2C_SCL}, {PIN_I2C_SCL, PIN_I2C_SDA}};
+  bool found = false;
   for (const auto& o : orders) {
     scanBus(o[0], o[1]);
-    if (aht20::begin(Wire)) return;
+    if ((found = aht20::begin(Wire))) break;
   }
-  scanBus(PIN_I2C_SDA, PIN_I2C_SCL);  // neither worked: report the schematic order
+  if (!found) scanBus(PIN_I2C_SDA, PIN_I2C_SCL);  // neither worked: report the schematic order
+  battery::begin();  // optional fuel gauge (MAX17048 0x36 / BQ27441 0x55), uses the bus as set up above
 }
 
 void tickAht(uint32_t now) {
@@ -278,6 +281,12 @@ void build() {
         PIN_I2C_SDA);
   }
 
+  if (battery::present())
+    add(battery::percent() > 15 ? GOOD : WARN, "BATT  %s  %u%%  %u mV  %s", battery::name(), battery::percent(),
+        battery::millivolts(), battery::charging() ? "charging" : battery::discharging() ? "on battery" : "resting");
+  else
+    add(DIM, "BATT  no fuel gauge (optional, see docs/battery.md)");
+
   char devs[40] = "none";
   size_t used = 0;
   for (uint8_t i = 0; i < env.n && used < sizeof(devs) - 6; i++)
@@ -367,6 +376,7 @@ void run(Scanner* const* list, size_t count) {
     tickScanners();
     tickTouch();
     tickAht(now);
+    battery::poll();
     tickLed(now);
     fx::update();
     if (now - lastDraw >= UI_FRAME_MS) {

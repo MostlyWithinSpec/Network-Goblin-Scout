@@ -20,6 +20,8 @@ struct Frame {
 class Companion {
  public:
   void setBase(CState s) { base_ = s; }
+  void setHat(uint8_t hat) { hat_ = hat; }
+  void setDroopy(bool d) { droopy_ = d; }
   void react(CState s, uint32_t ms, uint32_t now);
   CState state(uint32_t now) const;
 
@@ -30,6 +32,8 @@ class Companion {
     uint16_t tintColor = 0;
     uint8_t alpha = 255;
     bool aura = true;
+    uint8_t hat = 0;        // core/Hats.h id, 0 = none
+    uint8_t bright = 255;   // <255 = droopy/dim (hungry)
   };
   // (x, y) = bottom-centre (feet) of the goblin.
   void draw(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, const Frame* custom = nullptr) const;
@@ -40,4 +44,6 @@ class Companion {
   CState base_ = CState::Idle;
   CState temp_ = CState::Idle;
   uint32_t tempUntil_ = 0;
+  uint8_t hat_ = 0;
+  bool droopy_ = false;
 };

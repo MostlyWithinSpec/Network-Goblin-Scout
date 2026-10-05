@@ -35,12 +35,29 @@ pio device monitor               # serial log, 115200
 ```sh
 g++ -std=c++17 -Wall -Wextra -I src test/test_ieee802154.cpp -o /tmp/t && /tmp/t   # 802.15.4 parser
 g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/t && /tmp/t         # beacon codec
+g++ -std=c++17 -Wall -Wextra -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp \
+    src/core/Hats.cpp -o /tmp/t && /tmp/t                                           # quests + hats
+g++ -std=c++17 -Wall -Wextra -I src test/test_trackers.cpp src/core/Trackers.cpp -o /tmp/t && /tmp/t  # tracker alert
+g++ -std=c++17 -Wall -Wextra -I src test/test_clock.cpp -o /tmp/t && /tmp/t        # date maths
 sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
 python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
 ```
 
 Use the preview to check any UI change before handing a build to the owner: it is the only way to
 see the screens without the hardware. Keep `src/ui/` free of Arduino/hardware calls so it keeps working.
+
+**The ESP32-C5 has no FPU** (`-march=rv32imac`): every float op is a slow software call, and the PC
+preview hides that. No float maths in per-pixel loops; floats are fine once per shape/frame.
+Measure UI cost on the real CPU type before shipping drawing changes:
+
+```sh
+pip install unicorn pyelftools
+sh tools/bench/build.sh && python3 tools/bench/run.py tools/bench/bench.elf
+```
+
+It cross-compiles the UI for rv32imac, runs it in an emulator and prints instructions per frame
+plus the hottest functions and soft-float callers. (Instructions only: PSRAM latency comes on top.)
+v0.2.0 measured 31 M instr/frame on Home (owner saw 200 ms render); v0.2.2 is ~3.4 M.
 
 ### Building in a sandbox without the PlatformIO registry
 
@@ -74,6 +91,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 
 1. **Never store raw MACs or SSIDs** — only salted SHA-256 ids (`Engine::id`). Don't log
    them either. GPS coordinates stay on the SD card (not on screen, serial, or in sync).
+   One exception: the Wi-Fi network the *owner picks* for Goblin Sync (SSID + password) is kept in
+   NVS. The picker's list of nearby names (`WifiScanner::recent`) lives in RAM only.
 2. **BLE rotating private addresses count as sightings, not unique devices.**
 3. **Works fully offline; SD card optional** — everything must degrade gracefully without it.
 4. **Scanner architecture**: every radio implements `Scanner` (`src/scanners/Scanner.h`)
@@ -81,26 +100,37 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 5. **BLE callbacks never touch SPI** (display, SD and touch share one bus) — queue only;
    the main loop drains the queue.
 6. Achievement ids in `ACHIEVEMENTS[]` are saved to SD: append only, never reorder or rename.
-   Same for `Radio` enum values and `NG_SAVED_COUNTERS` names (both feed stored data).
-7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
-   per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
-   802.15.4 transmissions.
+   Same for `Radio` enum values, `NG_SAVED_COUNTERS` names, hat ids (`core/Hats.cpp`, also sent in
+   the beacon), quest types (`core/Quests.h`), `Stats::seasonMask` bits (`hats::seasonBit`) and the
+   beacon's hoard-tier bounds (`social/Sniff.h`, other goblins judge sniff-offs with them).
+7. **Scanning stays passive.** The only automatic transmission is the goblin beacon (`src/social/`):
+   non-connectable BLE advert, random per-boot address, no user data, user-toggleable. The only other
+   traffic is **Goblin Sync, started by the owner** (Setup > Sync): pause scans, join the owner's
+   network, one HTTPS POST of counts (`social/Sync.cpp`, server in the network-goblin-labs repo `api/`),
+   disconnect, resume. Never add background syncing, probe-request scans, active BLE scans or
+   802.15.4 transmissions. Sync uploads counts only: never SSIDs, MACs, salted ids, coordinates.
 
 ## Layout
 
 ```
 include/board.h, config.h, ng_log_level.h
 src/main.cpp         setup + non-blocking loop
-src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20
+src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20,
+                     Battery (optional fuel gauge on CN1: MAX17048 0x36 or BQ27441 0x55)
 src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
                      Ieee802154Frame.h (pure MAC header parser)
-src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format
-src/core/            Engine (sighting -> XP -> achievements -> persistence), Achievements, SeenStore, HashSet64
+src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format,
+                     Sync (Goblin Sync: owner-started upload to the leaderboard, HMAC-signed),
+                     Sniff.h = hoard tiers + sniff-off verdict (pure)
+src/core/            Engine (sighting -> XP -> achievements -> persistence, needs, quest board, radar blips),
+                     tracker alert, sniff-offs), Achievements, Quests, Hats, Trackers, Clock.h (pure),
+                     SeenStore, HashSet64
 src/ui/              Pure UI: Ui (screens/overlays/input), Companion (animated logo goblin), Widgets, Theme,
                      Model (per-frame snapshot from main.cpp), gfx/ (renderer), assets/ (generated)
-                     Sprites.cpp is the one device-only file (loads SD packs)
+                     HatArt (vector hats). Sprites.cpp is the one device-only file (loads SD packs)
+lib/qrcodegen/       Nayuki QR code generator (MIT, C) for the share card
 src/diag/            Hardware bring-up mode
-test/, tools/        PC unit tests, asset generator, UI preview
+test/, tools/        PC unit tests, asset generator, UI preview (+ AddressSanitizer in CI), rv32 bench
 ```
 
 ## Hardware bring-up mode
@@ -122,12 +152,33 @@ BOOT held during power-on/flashing = download mode (confirmed), hence the 1.5 s 
 Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board (schematic only);
 the environment stat was dropped. GPS and speaker not connected yet.
 
-v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
-v0.2.1 adds Turbo display + changed-areas-only flush; awaiting the `ui:` serial timing line.
+v0.3.0 on hardware: smooth animations, all features working (owner report). Owner saw progress
+"lost" after flashing: the factory image wipes NVS (goblin id) — fixed in v0.3.1 by mirroring it to SD.
+Power path (from schematic): USB VBUS -D1-> 5V rail -> 2x AMS1117-3.3; P5 pin 1 <-> 5V rail via
+Q1 AO3401A (P-FET, gate to GND = reverse-polarity protection, conducts both ways).
 
-Untested on hardware: goblin beacon + encounters. Test with one board and a phone: nRF Connect →
+v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
+v0.2.1 adds Turbo display + changed-areas-only flush. Owner log (v0.2.1): crystal 48 MHz,
+render ~200 ms, push 33 ms, 2-4 fps → render was the bottleneck (soft-float). v0.2.2 rewrote the
+renderer in integer maths (~9x fewer instructions); awaiting the next `ui:` line.
+
+v0.3.2 on hardware: boot loop fixed (wrap() stack overflow on the disclaimer, found with ASan),
+saving and name survive re-flashing (owner report). One cheap microSD card stopped mounting after the
+boot loop and stays unmountable on this board; another card works. Second board: needs
+`firmware.factory.bin` at 0x0 on first install (`invalid header` from the ROM otherwise).
+Web flasher (scout.networkgoblin.dev/flash, v0.4.0) confirmed working on both boards. The main board's
+boot loop after v0.4.0 was `firmware.bin` flashed at 0x0 by hand (ROM: `invalid header: 0x5d455b5d`, which is
+the app's `[%6u][E]` log string at offset 0x2000 of firmware.bin); fixed by a factory install. Not a firmware bug.
+
+Untested on hardware: goblin beacon + encounters + sniff-offs. Test with one board and a phone: nRF Connect →
 Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
-(a level-12 goblin called "Mock").
+(a level-12 goblin called "Mock"; change the `00` before the name to `A0` for a "Huge hoard", tier 5).
+
+v0.4.0 on hardware: owner reports the new features working (tracker alert not yet field-tested). Features:
+tracker alert, sniff-offs, battery gauge, clock + day/night,
+seasonal hats. Tracker test: an AirTag only sends the "separated" advert we look for once it has been away
+from its owner's iPhone for a while, so leave the iPhone at home and walk the AirTag + Scout through 3+
+places for 15+ min (Tile tags always count, so a Tile owner's own tag will alert: "It's mine").
 
 Still unknown:
 - **Touch min/max calibration** (`TOUCH_RAW_*`): unverified; vendor TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
@@ -140,5 +191,29 @@ Still unknown:
 ## Roadmap
 
 Done in v0.2 (awaiting hardware test): 802.15.4 scanner, goblin encounters, GUI overhaul, 110 achievements.
-Next: battery support (LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C)
--> account pairing and summary sync.
+Done in v0.3 (compiles; awaiting hardware test): hunger/boredom + happy XP bonus, quest boards, 13 hats
+(sent in beacon flags bits 0-4), radar screen, share card with QR (`NG_SHARE_URL`), goblin babble.
+Display DMA (IDF spi_master/esp_lcd for the whole shared bus) is deferred until the v0.2.2 `ui:` timing
+line shows whether push or render is the remaining bottleneck.
+Done in v0.3.1: goblin id/name mirrored in state.json (factory flash wipes NVS: 0xFF over 0x9000-0xDFFF),
+state.json.bak recovery, save within 3 s of big events, first-run disclaimer + naming keyboard,
+achievement batching.
+Done in v0.4.0: MAX17048 battery gauge (hardware wiring in docs/battery.md: boost to 5 V via Schottky into
+the 5V pad or P5 pin 1, never LiPo on 3V3/5V directly), tracker alert (core/Trackers, RAM only, salted ids),
+sniff-offs (hoard tier in beacon flags bits 5-7, backwards compatible), wall clock (GPS + UTC offset, or set
+by hand) with day/night background, night naps and 4 seasonal hats (ids 14-17), 12 achievements (122 total;
+the bitset holds 128, widen `Stats::achieved` before adding more than 6).
+v0.4.1: BQ27441 fuel gauge (SparkFun Battery Babysitter, needs a separate 5 V boost) alongside the
+MAX17048; capacity from `BATTERY_CAPACITY_MAH`. Owner reports all v0.4.0 features working on hardware.
+v0.5.0 (confirmed on hardware): Goblin Sync. Setup > Sync & leaderboard: pick Wi-Fi (RAM list of
+nearby names or type it; keyboard has a symbols layer), Sync now -> scans pause, upload task joins Wi-Fi and
+POSTs to `NG_SYNC_URL` over HTTPS (ESP-IDF CA bundle), HMAC-SHA256 with a device secret (NVS + /scout/sync.key),
+monotonic seq. Server: network-goblin-labs `api/` (Worker + D1, smoke-tested locally with wrangler).
+Leaderboard: scout.networkgoblin.dev/leaderboard. `first_sync` achievement (123 total).
+Server deployed by the owner as Cloudflare Worker `goblin-sync` (Workers Builds, root `api`, D1 `goblin-sync`),
+route scout.networkgoblin.dev/api/*. **v0.5.0 on hardware: full sync confirmed** (owner's goblin on the live
+leaderboard: Wi-Fi picker, password keyboard, HTTPS + HMAC upload, server, pages). Web flasher serves v0.5.0.
+v0.5.1 (confirmed on hardware, on the web flasher): "remove me" on the Sync screen (two taps) -> signed POST
+`/api/v1/forget` deletes the goblin's row; the device then re-claims on its next Sync. Accounts: owner
+chose not to have them (no personal data on the server, no support load).
+Next: encounter cross-checks (docs/sync-plan.md).

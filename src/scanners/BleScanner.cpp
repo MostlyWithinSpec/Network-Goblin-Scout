@@ -3,6 +3,7 @@
 #include <BLEScan.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include "../core/Trackers.h"
 #include "../social/PeerCodec.h"
 #include "config.h"
 
@@ -20,11 +21,25 @@ bool parseMac(const char* str, uint8_t out[6]) {
   return true;
 }
 
+bool hasUuid16(const uint8_t* d, size_t dl, uint16_t uuid) {  // list of 16-bit service UUIDs
+  for (size_t k = 0; k + 1 < dl; k += 2)
+    if ((uint16_t)(d[k] | d[k + 1] << 8) == uuid) return true;
+  return false;
+}
+
 // Walks the raw advertising payload (AD structures: len, type, data...).
-// Sets beacon flags, and decodes an NG Scout goblin beacon if there is one.
-uint8_t inspect(const uint8_t* p, size_t len, peercodec::Info& peerOut, bool& isPeer) {
+// Sets beacon flags, spots item trackers, and decodes an NG Scout goblin beacon if there is one.
+//
+// Tracker signatures (as used by tracker-detection apps such as AirGuard):
+//   Apple Find My, *separated from its owner*: manufacturer 0x004C, type 0x12, length 0x19
+//     (near its owner it sends a short 0x12 0x02 form, which we ignore)
+//   Samsung SmartTag: service data 0xFD5A    Tile: service 0xFEED / 0xFEEC
+//   Google Find My Device: Eddystone service data 0xFEAA with frame type 0x40 / 0x41
+//   Chipolo: service 0xFE33
+uint8_t inspect(const uint8_t* p, size_t len, peercodec::Info& peerOut, bool& isPeer, uint8_t& tracker) {
   uint8_t flags = 0;
   isPeer = false;
+  tracker = trackers::kNone;
   for (size_t i = 0; i + 1 < len;) {
     uint8_t n = p[i];
     if (n == 0 || i + 1 + n > len) break;
@@ -33,9 +48,20 @@ uint8_t inspect(const uint8_t* p, size_t len, peercodec::Info& peerOut, bool& is
     size_t dl = n - 1;
     if (type == 0xFF) {  // manufacturer specific
       if (dl >= 4 && d[0] == 0x4C && d[1] == 0x00 && d[2] == 0x02 && d[3] == 0x15) flags |= sflag::kIBeacon;
+      if (dl >= 4 && d[0] == 0x4C && d[1] == 0x00 && d[2] == 0x12 && d[3] == 0x19) tracker = trackers::kFindMy;
       if (peercodec::decode(d, dl, peerOut)) isPeer = true;
+    } else if (type == 0x16 && dl >= 3 && d[0] == 0xAA && d[1] == 0xFE && (d[2] == 0x40 || d[2] == 0x41)) {
+      tracker = trackers::kGoogle;
+    } else if (type == 0x16 && dl >= 2 && d[0] == 0x5A && d[1] == 0xFD) {
+      tracker = trackers::kSmartTag;
     } else if ((type == 0x16 || type == 0x03 || type == 0x02) && dl >= 2 && d[0] == 0xAA && d[1] == 0xFE) {
       flags |= sflag::kEddystone;  // 16-bit service UUID 0xFEAA
+    } else if ((type == 0x03 || type == 0x02) && (hasUuid16(d, dl, 0xFEED) || hasUuid16(d, dl, 0xFEEC))) {
+      tracker = trackers::kTile;
+    } else if (type == 0x16 && dl >= 2 && ((d[0] == 0xED && d[1] == 0xFE) || (d[0] == 0xEC && d[1] == 0xFE))) {
+      tracker = trackers::kTile;
+    } else if ((type == 0x03 || type == 0x02) && hasUuid16(d, dl, 0xFE33)) {
+      tracker = trackers::kChipolo;
     } else if (type == 0x08 || type == 0x09) {
       flags |= sflag::kNamed;
     }
@@ -53,7 +79,8 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
     s.panId = 0xFFFF;
     peercodec::Info peer;
     bool isPeer = false;
-    s.flags = inspect(d.getPayload(), d.getPayloadLength(), peer, isPeer);
+    uint8_t tracker = 0;
+    s.flags = inspect(d.getPayload(), d.getPayloadLength(), peer, isPeer, tracker);
     if (isPeer) {
       // Another NG Scout. Identity is its goblin id, not the (random, per-boot) address.
       s.radio = Radio::Peer;
@@ -62,11 +89,14 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
       s.macLen = 4;
       s.peerLevel = peer.level;
       s.peerHue = peer.hue;
+      s.flags = peer.flags & 0x1F;  // equipped hat id
+      s.peerHoard = peer.flags >> 5;
       strlcpy(s.name, peer.name, sizeof(s.name));
       xQueueSend(q, &s, 0);
       return;
     }
     s.radio = Radio::BLE;
+    s.tracker = tracker;
     if (d.haveName()) strlcpy(s.name, d.getName().c_str(), sizeof(s.name));
     // Address type 0 = public. For random addresses the top two bits of the
     // most significant byte are 0b11 for "static random" (stable until reboot of

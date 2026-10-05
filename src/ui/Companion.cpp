@@ -1,6 +1,7 @@
 #include "Companion.h"
 #include <math.h>
 #include <initializer_list>
+#include "HatArt.h"
 #include "Theme.h"
 #include "assets/GoblinArt.h"
 
@@ -52,7 +53,10 @@ void Companion::draw(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, const 
                 (int16_t)(y - custom->h * scale + bob), 0xF81F, scale);
     return;
   }
-  drawGoblin(s, x, y, now, st, Look());
+  Look look;
+  look.hat = hat_;
+  if (droopy_ && st == CState::Idle) look.bright = 200;
+  drawGoblin(s, x, y, now, st, look);
 }
 
 void Companion::drawGoblin(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, CState st, const Look& look) {
@@ -123,6 +127,7 @@ void Companion::drawGoblin(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, 
     fx.screenMix = (uint8_t)(50 + 40 * (0.5f + 0.5f * wave(now, 2.0f)));
   }
   if (sleeping) fx.bright = 150;
+  else if (look.bright != 255) fx.bright = look.bright;
   s.sprite(kGoblinPx, kGoblinAlpha, kGoblinClass, kGoblinW, kGoblinH, left, top, fx);
 
   // Blink every ~3.7 s (always shut when asleep): skin-coloured lids over both eyes.
@@ -138,6 +143,12 @@ void Companion::drawGoblin(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, 
       s.fillRoundRect(x0, y0, x1 - x0, y1 - y0, 2, lid, look.alpha);
       s.hline(x0 + 1, y1 - 2, x1 - x0 - 2, kLidLine, look.alpha);
     }
+  }
+
+  // Hat: anchored on the crown of the head (sprite x 48, y 17).
+  if (look.hat) {
+    float hx = left + (look.flip ? kGoblinW - 1 - 48 : 48) * scX;
+    ui::drawHat(s, look.hat, hx, top + 17 * scY, scX, now, look.flip);
   }
 
   // Device screen position (for signal arcs).
@@ -175,6 +186,11 @@ void Companion::drawSmall(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, c
   fx.alpha = look.alpha;
   fx.skinTintOn = look.tint;
   fx.skinTint = look.tintColor;
-  s.sprite(kGoblinSmallPx, kGoblinSmallAlpha, kGoblinSmallClass, kGoblinSmallW, kGoblinSmallH, x - dw / 2,
-           (int16_t)(y - dh + bob), fx);
+  int16_t left = x - dw / 2, top = (int16_t)(y - dh + bob);
+  s.sprite(kGoblinSmallPx, kGoblinSmallAlpha, kGoblinSmallClass, kGoblinSmallW, kGoblinSmallH, left, top, fx);
+  if (look.hat) {  // same anchor as the big goblin, scaled to the small sprite
+    const float k = (float)kGoblinSmallW / kGoblinW;
+    float hx = left + (look.flip ? kGoblinW - 1 - 48 : 48) * k * scX;
+    ui::drawHat(s, look.hat, hx, top + 17 * k * scY, k * scX, now, look.flip);
+  }
 }

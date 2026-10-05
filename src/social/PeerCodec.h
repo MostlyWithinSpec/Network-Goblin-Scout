@@ -12,7 +12,8 @@
 //   5-8  goblin id (random per device, little-endian)
 //   9-10 level (little-endian)
 //   11   hue (colour of this goblin, 0-255)
-//   12   flags (bit 0: currently scanning)
+//   12   flags: bits 0-4 = equipped hat id (0 = none, see core/Hats.h),
+//             bits 5-7 = hoard tier for sniff-offs (social/Sniff.h; 0 from firmware < 0.4)
 //   13+  goblin name, up to 12 chars, not NUL-terminated
 //
 // 13 + 12 = 25 bytes; with the AD headers and flags the advert is 30 of 31 bytes.

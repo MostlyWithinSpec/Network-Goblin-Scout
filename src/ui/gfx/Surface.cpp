@@ -3,18 +3,6 @@
 
 namespace gfx {
 
-// RGB565 blend using the "spread" trick: green moves to the top half of a 32-bit word,
-// leaving 5+ spare bits above each channel so all three blend in one multiply.
-uint16_t blend(uint16_t d, uint16_t s, uint8_t a) {
-  if (a >= 252) return s;
-  if (a < 4) return d;
-  uint32_t al = (a + 4) >> 3;  // 0..32
-  uint32_t D = (d | ((uint32_t)d << 16)) & 0x07E0F81F;
-  uint32_t S = (s | ((uint32_t)s << 16)) & 0x07E0F81F;
-  uint32_t R = ((S * al + D * (32 - al)) >> 5) & 0x07E0F81F;
-  return (uint16_t)(R | (R >> 16));
-}
-
 uint16_t mix(uint16_t a, uint16_t b, uint8_t t) { return blend(a, b, t); }
 uint16_t dim(uint16_t c, uint8_t k) { return blend(0, c, k); }
 
@@ -44,7 +32,6 @@ static inline uint8_t maxChannel(uint16_t c) {
   return m > b ? m : b;
 }
 
-static inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
 
 // ---------------------------------------------------------------------------
 void Surface::setClip(int16_t x, int16_t y, int16_t w, int16_t h) {
@@ -70,14 +57,6 @@ void Surface::span(int16_t x0, int16_t x1, int16_t y, uint16_t c, uint8_t a) {
     for (int16_t x = x0; x < x1; x++) p[x] = c;
   else
     for (int16_t x = x0; x < x1; x++) p[x] = blend(p[x], c, a);
-}
-
-void Surface::pixel(int16_t x, int16_t y, uint16_t c, uint8_t a) {
-  x += ox_;
-  y += oy_;
-  if (x < cx0_ || x >= cx1_ || y < cy0_ || y >= cy1_ || !a) return;
-  uint16_t& p = px_[(size_t)y * w_ + x];
-  p = blend(p, c, a);
 }
 
 void Surface::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c, uint8_t a) {
@@ -116,19 +95,92 @@ void Surface::gradientH(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t lef
     fillRect(x + i, y, 1, h, mix(left, right, (uint8_t)(w > 1 ? i * 255 / (w - 1) : 0)), a);
 }
 
+// ---------------------------------------------------------------------------
+// The ESP32-C5 has no FPU, so everything below runs per pixel in integers only.
+// Coordinates are fixed point with 4 fractional bits (1/16 px); floats appear only
+// once per call when converting the arguments.
+
+static inline int32_t fx16(float v) { return (int32_t)lroundf(v * 16); }
+
+static uint32_t isqrt(uint32_t v) {
+  uint32_t r = 0, b = 1u << 30;
+  while (b > v) b >>= 2;
+  while (b) {
+    if (v >= r + b) { v -= r + b; r = (r >> 1) + b; }
+    else r >>= 1;
+    b >>= 2;
+  }
+  return r;
+}
+
+static inline int32_t floorDiv16(int32_t v) { return v >= 0 ? v >> 4 : -((-v + 15) >> 4); }
+
+// "Diamond angle": a cheap, monotonic stand-in for the angle of (x, y), with y pointing
+// up. 0..4095 = one turn, 0 at 12 o'clock, increasing clockwise. No trig needed.
+static inline int32_t pang(int32_t x, int32_t y) {
+  int32_t d;
+  if (y >= 0) d = (x >= 0) ? (x + y ? y * 1024 / (x + y) : 0) : 1024 + (-x) * 1024 / (-x + y);
+  else d = (x < 0) ? 2048 + (-y) * 1024 / (-x - y) : 3072 + x * 1024 / (x - y);
+  return (1024 - d) & 4095;
+}
+static int32_t pangDeg(float deg) {
+  int32_t q = (int32_t)deg;
+  if ((float)q == deg && q % 90 == 0) return ((q / 90) * 1024) & 4095;  // no trig for 0/90/180/270
+  float r = deg * 0.01745329f;
+  return pang((int32_t)lroundf(sinf(r) * 4096), (int32_t)lroundf(cosf(r) * 4096));
+}
+
+// Visits the pixels of an annulus (skipping the hole) and hands each one its coverage
+// (0..255) and its diamond angle, all in integers.
+template <typename F>
+static void annulusFixed(int32_t cx, int32_t cy, int32_t r, int32_t in, F&& fn) {
+  int32_t ro = r + 8, roi = r - 8, ii = in - 8, io = in + 8;
+  int32_t ro2 = ro * ro, roi2 = roi > 0 ? roi * roi : 0;
+  int32_t ii2 = ii > 0 ? ii * ii : 0, io2 = io > 0 ? io * io : 0;
+  int32_t outerBand = ro2 - roi2 > 0 ? ro2 - roi2 : 1, innerBand = io2 - ii2 > 0 ? io2 - ii2 : 1;
+  int16_t y0 = (int16_t)floorDiv16(cy - ro), y1 = (int16_t)floorDiv16(cy + ro);
+  for (int16_t y = y0; y <= y1; y++) {
+    int32_t dy = y * 16 + 8 - cy, dy2 = dy * dy;
+    if (dy2 >= ro2) continue;
+    int32_t ho = (int32_t)isqrt((uint32_t)(ro2 - dy2));
+    int16_t xa = (int16_t)floorDiv16(cx - ho), xb = (int16_t)floorDiv16(cx + ho);
+    int16_t ha = xb + 1, hb = xa - 1;  // pixels entirely in the hole
+    if (ii2 > dy2) {
+      int32_t hh = (int32_t)isqrt((uint32_t)(ii2 - dy2));
+      ha = (int16_t)floorDiv16(cx - hh - 8 + 15);
+      hb = (int16_t)floorDiv16(cx + hh - 8);
+    }
+    for (int16_t x = xa; x <= xb; x++) {
+      if (x >= ha && x <= hb) { x = hb; continue; }
+      int32_t dx = x * 16 + 8 - cx, d2 = dx * dx + dy2;
+      if (d2 >= ro2 || d2 <= ii2) continue;
+      int32_t co = d2 <= roi2 ? 255 : (ro2 - d2) * 255 / outerBand;
+      int32_t ci = d2 >= io2 ? 255 : (d2 - ii2) * 255 / innerBand;
+      int32_t cov = co < ci ? co : ci;
+      if (cov > 0) fn(x, y, dx, dy, cov);
+    }
+  }
+}
+
+template <typename F>
+static void annulus(float cxf, float cyf, float rf, float thickf, F&& fn) {
+  annulusFixed(fx16(cxf), fx16(cyf), fx16(rf), fx16(rf - thickf), fn);
+}
+
 void Surface::fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t c, uint8_t a) {
   if (r * 2 > h) r = h / 2;
   if (r * 2 > w) r = w / 2;
+  int32_t r16 = r * 16;
   for (int16_t j = 0; j < h; j++) {
-    float inset = 0;
-    float cy = j < r ? r - j - 0.5f : (j >= h - r ? j - (h - r) + 0.5f : 0);
-    if (cy > 0) inset = r - sqrtf(fmaxf(0, (float)r * r - cy * cy));
-    int16_t full = (int16_t)ceilf(inset);
-    float cov = full - inset;
+    int32_t cy16 = j < r ? r16 - j * 16 - 8 : (j >= h - r ? (j - (h - r)) * 16 + 8 : 0);
+    int32_t inset16 = 0;
+    if (cy16 > 0) inset16 = r16 - (int32_t)isqrt((uint32_t)(r16 * r16 - cy16 * cy16 > 0 ? r16 * r16 - cy16 * cy16 : 0));
+    int16_t full = (int16_t)((inset16 + 15) >> 4);
+    int32_t cov = full * 16 - inset16;  // 0..15
     int16_t sy = y + j + oy_;
     span(x + ox_ + full, x + ox_ + w - full, sy, c, a);
-    if (full > 0 && cov > 0.02f) {
-      uint8_t ea = (uint8_t)(a * cov);
+    if (full > 0 && cov > 0) {
+      uint8_t ea = (uint8_t)(a * cov / 16);
       span(x + ox_ + full - 1, x + ox_ + full, sy, c, ea);
       span(x + ox_ + w - full, x + ox_ + w - full + 1, sy, c, ea);
     }
@@ -143,110 +195,88 @@ void Surface::roundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, u
   vline(x, y + r, h - 2 * r, c, a);
   vline(x + w - 1, y + r, h - 2 * r, c, a);
   if (r <= 0) return;
-  float rr = r - 0.5f;
-  ring(x + r, y + r, rr + 0.5f, 1, c, a, 270, 90);
-  ring(x + w - r, y + r, rr + 0.5f, 1, c, a, 0, 90);
-  ring(x + w - r, y + h - r, rr + 0.5f, 1, c, a, 90, 90);
-  ring(x + r, y + h - r, rr + 0.5f, 1, c, a, 180, 90);
+  // corners: 1 px quarter rings, all integer (quadrant starts 270, 0, 90, 180 degrees)
+  const int16_t cxs[4] = {(int16_t)(x + r), (int16_t)(x + w - r), (int16_t)(x + w - r), (int16_t)(x + r)};
+  const int16_t cys[4] = {(int16_t)(y + r), (int16_t)(y + r), (int16_t)(y + h - r), (int16_t)(y + h - r)};
+  const int32_t starts[4] = {3072, 0, 1024, 2048};
+  for (int q = 0; q < 4; q++) {
+    int32_t s0 = starts[q];
+    annulusFixed(cxs[q] * 16, cys[q] * 16, r * 16, (r - 1) * 16,
+                 [&](int16_t px, int16_t py, int32_t dx, int32_t dy, int32_t cov) {
+                   if (((pang(dx, -dy) - s0) & 4095) > 1024) return;
+                   pixel(px, py, c, (uint8_t)(a * cov / 255));
+                 });
+  }
 }
 
-void Surface::fillCircle(float cx, float cy, float r, uint16_t c, uint8_t a) {
-  if (r <= 0) return;
-  int16_t y0 = (int16_t)floorf(cy - r - 1), y1 = (int16_t)ceilf(cy + r + 1);
+void Surface::fillCircle(float cxf, float cyf, float rf, uint16_t c, uint8_t a) {
+  if (rf <= 0) return;
+  int32_t cx = fx16(cxf), cy = fx16(cyf), r = fx16(rf);
+  int32_t ro = r + 8, ri = r - 8;                 // AA band: +-0.5 px around the edge
+  int32_t ro2 = ro * ro, ri2 = ri > 0 ? ri * ri : 0, band = ro2 - ri2;
+  int16_t y0 = (int16_t)floorDiv16(cy - ro), y1 = (int16_t)floorDiv16(cy + ro);
   for (int16_t y = y0; y <= y1; y++) {
-    float dy = y + 0.5f - cy;
-    float h2 = (r + 0.5f) * (r + 0.5f) - dy * dy;
-    if (h2 <= 0) continue;
-    float half = sqrtf(h2);
-    int16_t xa = (int16_t)floorf(cx - half), xb = (int16_t)ceilf(cx + half);
-    // fully covered middle: pixels whose centre is at least 0.5 px inside
-    float in2 = (r - 0.5f) * (r - 0.5f) - dy * dy;
-    int16_t ia = xb, ib = xa;
-    if (in2 > 0) {
-      float ih = sqrtf(in2);
-      ia = (int16_t)ceilf(cx - ih - 0.5f);
-      ib = (int16_t)floorf(cx + ih - 0.5f);
+    int32_t dy = y * 16 + 8 - cy, dy2 = dy * dy;
+    if (dy2 >= ro2) continue;
+    int32_t ho = (int32_t)isqrt((uint32_t)(ro2 - dy2));
+    int16_t xa = (int16_t)floorDiv16(cx - ho), xb = (int16_t)floorDiv16(cx + ho);
+    int16_t ia = xb + 1, ib = xa - 1;           // fully covered range (pixel centres inside ri)
+    if (ri2 > dy2) {
+      int32_t hi = (int32_t)isqrt((uint32_t)(ri2 - dy2));
+      ia = (int16_t)floorDiv16(cx - hi - 8 + 15);
+      ib = (int16_t)floorDiv16(cx + hi - 8);
       if (ib >= ia) span(ia + ox_, ib + 1 + ox_, y + oy_, c, a);
     }
-    for (int16_t x = xa; x <= xb; x++) {  // anti-aliased edges only
-      if (x >= ia && x <= ib) { x = ib; continue; }
-      float dx = x + 0.5f - cx;
-      float cov = clamp01(r - sqrtf(dx * dx + dy * dy) + 0.5f);
-      if (cov > 0) pixel(x, y, c, (uint8_t)(a * cov));
-    }
-  }
-}
-
-// Visits only the pixels of the annulus (not the whole bounding box).
-template <typename F>
-static void annulus(float cx, float cy, float r, float inner, F&& fn) {
-  int16_t y0 = (int16_t)floorf(cy - r - 1), y1 = (int16_t)ceilf(cy + r + 1);
-  float ro = r + 0.5f, ri = inner - 0.5f;
-  for (int16_t y = y0; y <= y1; y++) {
-    float dy = y + 0.5f - cy;
-    float h2 = ro * ro - dy * dy;
-    if (h2 <= 0) continue;
-    float half = sqrtf(h2);
-    float ih = (ri > 0 && ri * ri > dy * dy) ? sqrtf(ri * ri - dy * dy) : -1;
-    int16_t xa = (int16_t)floorf(cx - half), xb = (int16_t)ceilf(cx + half);
     for (int16_t x = xa; x <= xb; x++) {
-      float dx = x + 0.5f - cx;
-      if (ih > 0 && dx > -ih + 1 && dx < ih - 1) {  // skip the hole
-        x = (int16_t)floorf(cx + ih - 1);
-        continue;
-      }
-      fn(x, y, dx, dy);
+      if (x >= ia && x <= ib) { x = ib; continue; }
+      int32_t dx = x * 16 + 8 - cx, d2 = dx * dx + dy2;
+      if (d2 >= ro2) continue;
+      int32_t cov = d2 <= ri2 ? 255 : (ro2 - d2) * 255 / band;
+      pixel(x, y, c, (uint8_t)(a * cov / 255));
     }
   }
-}
-
-static inline bool inSweep(float dx, float dy, float startDeg, float sweepDeg, float& rel) {
-  float ang = atan2f(dx, -dy) * 57.29578f;
-  if (ang < 0) ang += 360;
-  rel = ang - startDeg;
-  while (rel < 0) rel += 360;
-  while (rel >= 360) rel -= 360;
-  return rel <= sweepDeg;
 }
 
 void Surface::ring(float cx, float cy, float r, float thick, uint16_t c, uint8_t a, float startDeg,
                    float sweepDeg) {
   if (sweepDeg <= 0) return;
-  bool full = sweepDeg >= 360;
-  float inner = r - thick;
-  annulus(cx, cy, r, inner, [&](int16_t x, int16_t y, float dx, float dy) {
-    float d = sqrtf(dx * dx + dy * dy);
-    float cov = clamp01(fminf(r - d + 0.5f, d - inner + 0.5f));
-    if (cov <= 0) return;
-    float rel;
-    if (!full && !inSweep(dx, dy, startDeg, sweepDeg, rel)) return;
-    pixel(x, y, c, (uint8_t)(a * cov));
+  bool full = sweepDeg >= 359.5f;
+  int32_t s0 = full ? 0 : pangDeg(startDeg);
+  int32_t sw = full ? 4096 : (pangDeg(startDeg + sweepDeg) - s0) & 4095;
+  if (!full && sw == 0) sw = 4096;
+  annulus(cx, cy, r, thick, [&](int16_t x, int16_t y, int32_t dx, int32_t dy, int32_t cov) {
+    if (!full && ((pang(dx, -dy) - s0) & 4095) > sw) return;
+    pixel(x, y, c, (uint8_t)(a * cov / 255));
   });
 }
 
 void Surface::ringGradient(float cx, float cy, float r, float thick, uint16_t c0, uint16_t c1, float sweepDeg,
                            uint8_t a) {
   if (sweepDeg <= 0) return;
-  float inner = r - thick;
-  annulus(cx, cy, r, inner, [&](int16_t x, int16_t y, float dx, float dy) {
-    float d = sqrtf(dx * dx + dy * dy);
-    float cov = clamp01(fminf(r - d + 0.5f, d - inner + 0.5f));
-    if (cov <= 0) return;
-    float rel;
-    if (!inSweep(dx, dy, 0, sweepDeg, rel)) return;
-    pixel(x, y, mix(c0, c1, (uint8_t)(rel / sweepDeg * 255)), (uint8_t)(a * cov));
+  int32_t sw = sweepDeg >= 359.5f ? 4095 : pangDeg(sweepDeg);
+  if (sw == 0) return;
+  annulus(cx, cy, r, thick, [&](int16_t x, int16_t y, int32_t dx, int32_t dy, int32_t cov) {
+    int32_t p = pang(dx, -dy);
+    if (p > sw) return;
+    pixel(x, y, mix(c0, c1, (uint8_t)(p * 255 / sw)), (uint8_t)(a * cov / 255));
   });
 }
 
-void Surface::glow(float cx, float cy, float r, uint16_t c, uint8_t a) {
-  int16_t x0 = (int16_t)(cx - r), x1 = (int16_t)(cx + r), y0 = (int16_t)(cy - r), y1 = (int16_t)(cy + r);
-  float inv = 1.0f / r;
+void Surface::glow(float cxf, float cyf, float rf, uint16_t c, uint8_t a) {
+  if (rf <= 0 || !a) return;
+  int32_t cx = fx16(cxf), cy = fx16(cyf), r = fx16(rf), r2 = r * r;
+  int16_t y0 = (int16_t)floorDiv16(cy - r), y1 = (int16_t)floorDiv16(cy + r);
   for (int16_t y = y0; y <= y1; y++) {
-    float dy = (y + 0.5f - cy) * inv;
-    for (int16_t x = x0; x <= x1; x++) {
-      float dx = (x + 0.5f - cx) * inv;
-      float t = 1 - (dx * dx + dy * dy);
-      if (t > 0) pixel(x, y, c, (uint8_t)(a * t * t));
+    int32_t dy = y * 16 + 8 - cy, dy2 = dy * dy;
+    if (dy2 >= r2) continue;
+    int32_t hw = (int32_t)isqrt((uint32_t)(r2 - dy2));
+    int16_t xa = (int16_t)floorDiv16(cx - hw), xb = (int16_t)floorDiv16(cx + hw);
+    for (int16_t x = xa; x <= xb; x++) {
+      int32_t dx = x * 16 + 8 - cx, d2 = dx * dx + dy2;
+      if (d2 >= r2) continue;
+      uint32_t t = (uint32_t)(r2 - d2) * 255u / (uint32_t)r2;  // 1 - d^2/r^2, 0..255
+      uint32_t k = a * t * t / 65025u;
+      if (k) pixel(x, y, c, (uint8_t)k);
     }
   }
 }
@@ -258,12 +288,18 @@ void Surface::fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16
   if (y1 > y2) { int16_t t = y1; y1 = y2; y2 = t; t = x1; x1 = x2; x2 = t; }
   if (y0 > y1) { int16_t t = y0; y0 = y1; y1 = t; t = x0; x0 = x1; x1 = t; }
   if (y2 == y0) return;
-  for (int16_t y = y0; y <= y2; y++) {
-    float xa = x0 + (float)(x2 - x0) * (y - y0) / (y2 - y0);
-    float xb = (y < y1) ? (y1 == y0 ? x1 : x0 + (float)(x1 - x0) * (y - y0) / (y1 - y0))
-                        : (y2 == y1 ? x1 : x1 + (float)(x2 - x1) * (y - y1) / (y2 - y1));
-    if (xa > xb) { float t = xa; xa = xb; xb = t; }
-    span((int16_t)lroundf(xa) + ox_, (int16_t)lroundf(xb) + 1 + ox_, y + oy_, c, a);
+  // clip rows to the visible area first; rays are mostly off-screen
+  int16_t ya = y0, yb = y2;
+  if (ya < cy0_ - oy_) ya = cy0_ - oy_;
+  if (yb > cy1_ - 1 - oy_) yb = cy1_ - 1 - oy_;
+  for (int16_t y = ya; y <= yb; y++) {
+    // 16.16 fixed-point edge positions
+    int32_t xa = (x0 << 16) + (int32_t)(((int64_t)(x2 - x0) << 16) * (y - y0) / (y2 - y0));
+    int32_t xb;
+    if (y < y1) xb = y1 == y0 ? (x1 << 16) : (x0 << 16) + (int32_t)(((int64_t)(x1 - x0) << 16) * (y - y0) / (y1 - y0));
+    else xb = y2 == y1 ? (x1 << 16) : (x1 << 16) + (int32_t)(((int64_t)(x2 - x1) << 16) * (y - y1) / (y2 - y1));
+    if (xa > xb) { int32_t t = xa; xa = xb; xb = t; }
+    span((int16_t)((xa + 0x8000) >> 16) + ox_, (int16_t)((xb + 0x8000) >> 16) + 1 + ox_, y + oy_, c, a);
   }
 }
 
@@ -271,22 +307,29 @@ void Surface::fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16
 void Surface::sprite(const uint16_t* px, const uint8_t* alpha, const uint8_t* cls, int16_t w, int16_t h, int16_t x,
                      int16_t y, const SpriteFx& fx) {
   int16_t dw = (int16_t)lroundf(w * fx.scaleX), dh = (int16_t)lroundf(h * fx.scaleY);
-  if (dw <= 0 || dh <= 0) return;
-  float ix = (float)w / dw, iy = (float)h / dh;
+  if (dw <= 0 || dh <= 0 || dw > 320) return;
+  // source column for each destination column, computed once (16.16 fixed point)
+  int16_t cols[320];
+  uint32_t stepX = ((uint32_t)w << 16) / dw, stepY = ((uint32_t)h << 16) / dh;
+  for (int16_t i = 0; i < dw; i++) {
+    int16_t sx = (int16_t)((i * stepX) >> 16);
+    if (sx >= w) sx = w - 1;
+    cols[i] = fx.flipX ? w - 1 - sx : sx;
+  }
   for (int16_t j = 0; j < dh; j++) {
-    int16_t sy = (int16_t)(j * iy);
+    int16_t ry = y + j + oy_;
+    if (ry < cy0_ || ry >= cy1_) continue;
+    int16_t sy = (int16_t)((j * stepY) >> 16);
     if (sy >= h) sy = h - 1;
+    const size_t row = (size_t)sy * w;
     for (int16_t i = 0; i < dw; i++) {
-      int16_t sx = (int16_t)(i * ix);
-      if (sx >= w) sx = w - 1;
-      if (fx.flipX) sx = w - 1 - sx;
-      size_t idx = (size_t)sy * w + sx;
+      size_t idx = row + cols[i];
       uint8_t a = alpha[idx];
       if (!a) continue;
       uint16_t c = px[idx];
       uint8_t k = cls ? cls[idx] : 0;
       if (k == 1 && fx.skinTintOn) {
-        uint32_t l = maxChannel(c) * 255u / 170u;  // keep the shading of the original green
+        uint32_t l = maxChannel(c) * 3u / 2u;  // keep the shading of the original green
         c = dim(fx.skinTint, (uint8_t)(l > 255 ? 255 : l));
       } else if (k == 2 && fx.eyeMix) {
         c = mix(c, fx.eyeColor, fx.eyeMix);
@@ -295,7 +338,7 @@ void Surface::sprite(const uint16_t* px, const uint8_t* alpha, const uint8_t* cl
       }
       if (fx.bright != 255) c = dim(c, fx.bright);
       if (fx.flashMix) c = mix(c, fx.flash, fx.flashMix);
-      pixel(x + i, y + j, c, (uint8_t)(a * fx.alpha / 255));
+      pixel(x + i, y + j, c, fx.alpha == 255 ? a : (uint8_t)(a * fx.alpha / 255));
     }
   }
 }

@@ -7,7 +7,9 @@
 // main.cpp to do anything hardware-related through Hooks (so it also runs on a PC).
 namespace ui {
 
-enum Sfx : uint8_t { kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet };
+enum Sfx : uint8_t {
+  kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet, kSfxBabble, kSfxQuest, kSfxAlert
+};
 
 struct Hooks {
   void (*brightness)(uint8_t pct) = nullptr;
@@ -19,9 +21,24 @@ struct Hooks {
   bool (*nextPack)() = nullptr;          // cycle SD sprite packs; false if there are none
   void (*settingsChanged)() = nullptr;   // persist settings
   void (*pet)() = nullptr;               // goblin was petted
+  void (*hat)(uint8_t id) = nullptr;     // hat equipped (0 = none)
   void (*sfx)(Sfx s) = nullptr;
   void (*led)(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) = nullptr;
+  uint32_t (*micros)() = nullptr;        // optional: enables profile()
+  void (*agreed)() = nullptr;            // first-run disclaimer accepted
+  void (*named)(const char* name) = nullptr;  // goblin (re)named
+  void (*trackerMine)() = nullptr;       // "it's mine" on a tracker alert
+  void (*setClock)(uint32_t localUnix) = nullptr;  // Setup > Clock
+  void (*setWifi)(const char* ssid, const char* pass) = nullptr;  // Goblin Sync network
+  void (*syncNow)() = nullptr;
+  void (*forgetMe)() = nullptr;          // remove this goblin from the leaderboard
 };
+
+// Time spent in each part of the last render(), in microseconds (needs Hooks::micros).
+struct Profile {
+  uint32_t background, screen, chrome, overlays;
+};
+const Profile& profile();
 
 // bgBuffer: optional 320x240 RGB565 scratch buffer for the pre-rendered background
 // (saves redrawing it every frame). May be null.
@@ -32,6 +49,11 @@ void onTouch(bool down, int16_t x, int16_t y, const UiModel& m);
 void render(gfx::Surface& s, const UiModel& m);
 void splash(gfx::Surface& s, uint32_t now, const char* line);
 Companion& pet();
+
+// First-run flow: disclaimer and/or naming, shown full-screen before the normal tabs.
+// main.cpp keeps rendering and feeding touches until onboarding() returns false.
+void startOnboarding(bool disclaimer, bool name);
+bool onboarding();
 bool animating();  // an overlay or transition is running (main can skip frame limiting)
 
 // For the preview tool.

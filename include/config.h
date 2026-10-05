@@ -1,9 +1,16 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.2.0"
+#define NG_FW_VERSION           "0.5.1"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
+
+// Where the share card's QR code points. Change it to whatever you want people to find.
+#define NG_SYNC_SITE            "https://scout.networkgoblin.dev"
+#define NG_SHARE_URL            NG_SYNC_SITE                 // share card QR code
+#define NG_SYNC_URL             NG_SYNC_SITE "/api/v1/sync"  // Goblin Sync upload (network-goblin-labs api/)
+#define NG_FORGET_URL           NG_SYNC_SITE "/api/v1/forget"  // removes this goblin from the leaderboard
+#define SYNC_WIFI_TIMEOUT_MS    20000
 
 // ---- Display --------------------------------------------------------------
 #define DISPLAY_SPI_HZ          40000000   // "Turbo display" off
@@ -34,7 +41,12 @@
 #define SCAN_REST_MS            1500
 
 // ---- Persistence ----------------------------------------------------------
-#define STATE_SAVE_INTERVAL_MS  60000
+#define STATE_SAVE_INTERVAL_MS  30000      // plus within 3 s of level-ups, achievements, quests
+
+// ---- Battery ----------------------------------------------------------------
+// Your LiPo's capacity. Only the BQ27441 gauge (SparkFun Battery Babysitter) needs it:
+// it counts charge in and out. The MAX17048 works it out from the voltage instead.
+#define BATTERY_CAPACITY_MAH    2000
 
 // ---- GPS ------------------------------------------------------------------
 #define GPS_BAUD                9600
@@ -52,6 +64,16 @@
 #define XP_NEW_PAN              15         // new Zigbee/Thread network
 #define XP_NEW_PEER             100        // met a new goblin
 #define XP_PEER_REUNION         25         // met a known goblin again
+#define XP_BOARD_CLEARED        100        // finished all three quests
+#define XP_SNIFF_WIN            60         // goblin sniff-off: bigger hoard
+#define XP_SNIFF_DRAW           40
+#define XP_SNIFF_LOSE           20         // everyone gets something for showing up
+#define SNIFF_COOLDOWN_MS       (6UL * 60 * 60 * 1000)  // one sniff-off per goblin per 6 h
+
+// ---- Quests & needs -------------------------------------------------------
+#define QUEST_COOLDOWN_MIN      30         // minutes of scanning before a new board after clearing one
+#define HUNGER_PER_MIN          8          // 0..1000: empty to starving in ~2 h without discoveries
+#define BOREDOM_PER_MIN         5          // 0..1000: ~3.3 h without anything new or fun
 
 // ---- Goblin encounters ----------------------------------------------------
 #define PEER_REVISIT_MS         (15UL * 60 * 1000)  // same goblin counts again after 15 min apart
