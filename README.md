@@ -12,6 +12,16 @@ Scan → discover → earn XP → unlock achievements → level up your goblin. 
    `ARDUINO_USB_MODE` and `ARDUINO_USB_CDC_ON_BOOT` to `0` in `platformio.ini`.
 4. Copy the contents of `sd_card/` to the root of a FAT32 microSD card.
 
+No toolchain? Every push builds in GitHub Actions: open the run under **Actions**, download the
+`ng-scout-<commit>` artifact and flash `firmware.factory.bin` at `0x0` (see `FLASHING.txt` inside).
+
+### Hardware bring-up mode
+
+Power on, then **press BOOT within 1.5 s** while the splash says "press BOOT now for diagnostics".
+(Holding BOOT *while* powering on can put the ESP32-C5 into USB flashing mode instead.)
+One screen, mirrored to serial every 2 s, shows PSRAM, SD, raw touch, Wi-Fi/BLE scan counts,
+GPS, the AHT20 sensor, an I2C scan, LED colours and display colour swatches. Press RESET to exit.
+
 ## First-boot checklist
 
 | Check | If it's wrong |
