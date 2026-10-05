@@ -17,6 +17,7 @@ class Engine {
   void setOnBattery(bool b) { onBattery_ = b; }      // counts battery minutes
   void trackerIsMine();                              // last tracker alert was the owner's own
   size_t trackersNearby() const { return watch_.nearby(millis()); }
+  uint8_t hoardTier() const;                         // for the beacon (sniff-offs)
 
   Stats& stats() { return stats_; }
   Settings& settings() { return settings_; }
@@ -64,6 +65,8 @@ class Engine {
   trackers::PlaceTracker places_;
   trackers::Watch watch_;
   uint64_t lastAlertId_ = 0;
+  struct SniffMemo { uint32_t id = 0, atMs = 0; };
+  SniffMemo sniffMemo_[8];
   uint64_t scanTop_[trackers::PlaceTracker::kFp] = {};  // strongest networks in this Wi-Fi scan
   int8_t scanTopRssi_[trackers::PlaceTracker::kFp] = {};
   size_t scanTopN_ = 0;
@@ -89,6 +92,7 @@ class Engine {
   void process154(const Sighting& s);
   void processPeer(const Sighting& s);
   void watchTracker(uint64_t id, const Sighting& s);
+  void sniffOff(const NearbyPeer& p);
 };
 
 extern Engine engine;

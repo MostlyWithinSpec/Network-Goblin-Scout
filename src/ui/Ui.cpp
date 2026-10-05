@@ -8,6 +8,7 @@
 #include "../core/Quests.h"
 #include "../core/Trackers.h"
 #include "../social/PeerCodec.h"
+#include "../social/Sniff.h"
 #include "HatArt.h"
 #include "Theme.h"
 #include "Widgets.h"
@@ -75,7 +76,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -971,6 +972,7 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
 
 uint32_t overlayLength(OvType t) {
   if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
+  if (t == OvType::Sniff) return 5000;
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1006,6 +1008,9 @@ void startOverlay(uint32_t now) {
       sfx(kSfxEncounter);
       led(60, 0, 50, 2000);
       companion.react(CState::Excited, 5000, now);
+      break;
+    case OvType::Sniff:
+      companion.react(CState::Searching, 2500, now);
       break;
     case OvType::Tracker:
       sfx(kSfxAlert);
@@ -1148,6 +1153,62 @@ void drawAchBatch(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
   s.textCentered(fSmall(), W / 2, 202, "see them all in LOOT", kDim, a8(255 * in));
 }
 
+void drawSniff(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now, const UiModel& m) {
+  uint8_t result = o.value & 0xFF, mine = (o.value >> 8) & 7, theirs = (o.value >> 16) & 7;
+  uint32_t xp = o.value >> 24;
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, gfx::hex(0x120A1E), a8(250 * in));
+  s.textCentered(fBig(), W / 2, 10, "SNIFF-OFF!", kAmber, a8(255 * in));
+
+  // the two goblins lean in and sniff (little bobs), noses towards each other
+  int16_t lx = 62, rx = W - 62, feet = 118;
+  float bobL = t < 2200 ? 2.5f * sinf(now / 70.0f) : 0, bobR = t < 2200 ? 2.5f * sinf(now / 70.0f + 1.7f) : 0;
+  Companion::Look me;
+  me.scale = 1.05f;
+  me.hat = m.settings->hat;
+  Companion::drawSmall(s, lx, (int16_t)(feet + bobL), now, me);
+  Companion::Look them;
+  them.scale = 1.05f;
+  them.flip = true;
+  them.tint = true;
+  them.tintColor = gfx::hue(o.peerHue, 190, 255);
+  them.hat = o.peerHat;
+  Companion::drawSmall(s, rx, (int16_t)(feet + bobR), now + 333, them);
+  if (t < 2200 && (now / 300) % 2) {  // sniff puffs
+    s.textCentered(fSmall(), lx + 40, 52, "sniff", kDim);
+    s.textCentered(fSmall(), rx - 40, 64, "sniff", kDim);
+  }
+  s.textCentered(fSmall(), lx, feet + 4, "YOU", kGreen, a8(255 * in));
+  s.textCentered(fSmall(), rx, feet + 4, o.peerName, gfx::hue(o.peerHue, 150, 255), a8(255 * in));
+
+  // hoard bars grow, then the verdict
+  float grow = easeOut((t - 500) / 1500.0f);
+  const int16_t base = 176, maxH = 120;
+  struct { int16_t x; uint8_t tier; uint16_t c; } bars[2] = {{W / 2 - 34, mine, kGreen},
+                                                            {W / 2 + 8, theirs, gfx::hue(o.peerHue, 170, 255)}};
+  bool decided = t > 2300;
+  for (int i = 0; i < 2; i++) {
+    int16_t h = (int16_t)(maxH * (bars[i].tier + 1) / 8 * grow);
+    bool winner = decided && ((i == 0 && result == sniff::kWin) || (i == 1 && result == sniff::kLose));
+    if (winner) s.glow(bars[i].x + 13, base - h, 22, kGoldC, 120);
+    s.fillRoundRect(bars[i].x, base - h, 26, h + 1, 5, winner ? kGoldC : bars[i].c, 220);
+  }
+  s.hline(W / 2 - 44, base + 1, 88, kEdge);
+  s.textCentered(fSmall(), lx, 140, sniff::tierName(mine), kDim, a8(255 * grow));
+  s.textCentered(fSmall(), rx, 140, sniff::tierName(theirs), kDim, a8(255 * grow));
+
+  if (decided) {
+    float pop = easeBack((t - 2300) / 450.0f);
+    const char* v = result == sniff::kWin ? "YOUR HOARD WINS!" : result == sniff::kDraw ? "DEAD HEAT!" : "THEIR HOARD WINS";
+    uint16_t c = result == sniff::kWin ? kGoldC : result == sniff::kDraw ? kCyan : kText;
+    s.textCentered(fBody(), W / 2, 186, v, c, a8(255 * clampf(pop, 0, 1)));
+    char b[32];
+    snprintf(b, sizeof(b), result == sniff::kLose ? "+%lu XP for showing up" : "+%lu XP", (unsigned long)xp);
+    s.textCentered(fSmall(), W / 2, 210, b, kDim, a8(255 * clampf(pop, 0, 1)));
+    if (t < 2400 && result == sniff::kWin && partCount < 30) emit(PKind::Confetti, W / 2, 120, 26, 0, 140, 2.0f);
+  }
+}
+
 // Tracker alert buttons
 const int16_t kTrkBtnY = 198, kTrkBtnH = 32;
 bool inMineBtn(int16_t x, int16_t y) { return y >= kTrkBtnY - 4 && x < W / 2 - 4; }
@@ -1200,6 +1261,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::Hat: drawHatOverlay(s, o, t, m.now); break;
     case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
     case OvType::Tracker: drawTracker(s, o, t, m.now); break;
+    case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
   }
 }
 
@@ -1674,6 +1736,9 @@ void onEvent(const UiEvent& e, uint32_t now) {
       banner(Glyph::Trophy, kCyan);
       break;
     case EventType::HatUnlocked: overlay(OvType::Hat); break;
+    case EventType::SniffOff:
+      overlay(OvType::Sniff);
+      break;
     case EventType::TrackerAlert:
       // Jumps the queue: safety first, celebrations can wait.
       if (overlayCount == 6) overlayCount--;

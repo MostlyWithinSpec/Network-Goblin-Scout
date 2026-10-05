@@ -7,6 +7,7 @@
 #include "core/Hats.h"
 #include "core/Quests.h"
 #include "core/Trackers.h"
+#include "social/Sniff.h"
 #include "ui/Ui.h"
 
 static uint16_t fb[320 * 240], bg[320 * 240];
@@ -203,6 +204,18 @@ int main() {
   model.trackersNearby = 2;
   ui::debugShow(1, 0); run(600); save("22_radar_trackers");
   model.trackersNearby = 0;
+
+  // sniff-off with Grimwick: our "Big hoard" (tier 4) beats their "Modest pile" (tier 2)
+  {
+    UiEvent e = ev(EventType::SniffOff, sniff::kWin | 4u << 8 | 2u << 16 | 60u << 24, "Sniff-off won! +60 XP");
+    snprintf(e.peerName, sizeof(e.peerName), "Grimwick");
+    e.peerLevel = 12; e.peerHue = 200; e.peerHat = 3;
+    ui::debugShow(0, 0);
+    ui::onEvent(e, now);
+    run(1300); save("23_sniff_off");
+    run(1700); save("24_sniff_result");
+    run(3000);
+  }
   printf("rendered\n");
   return 0;
 }

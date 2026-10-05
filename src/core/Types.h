@@ -39,6 +39,7 @@ struct Sighting {
   uint16_t peerLevel; // Peer only
   uint8_t peerHue;    // Peer only: colour of their goblin
   uint8_t tracker;    // BLE only: trackers::Kind if it looks like an item tracker (0 = no)
+  uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h)
 };
 
 // Lifetime counters saved in state.json under their own names. Add new ones at will;
@@ -53,7 +54,7 @@ struct Sighting {
   X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
-  X(batteryMin) X(trackersSeen) X(trackerAlerts)
+  X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -103,7 +104,7 @@ struct Settings {
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff
 };
 
 struct UiEvent {
@@ -115,6 +116,7 @@ struct UiEvent {
   uint16_t peerLevel;
   uint8_t peerHue;
   uint8_t peerHat;
+  uint8_t peerHoard;
 };
 
 // A goblin seen recently (for the status bar and the encounter scene).
@@ -125,6 +127,7 @@ struct NearbyPeer {
   uint8_t hue = 0;
   int8_t rssi = -127;
   uint8_t hat = 0;
+  uint8_t hoard = 0;         // hoard tier (social/Sniff.h)
   uint32_t lastSeenMs = 0;
 };
 

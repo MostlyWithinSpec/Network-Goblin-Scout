@@ -111,6 +111,13 @@ void setHat(uint8_t hat) {
   if (advertising) advertise();
 }
 
+void setHoardTier(uint8_t tier) {
+  uint8_t f = (uint8_t)((me.flags & 0x1F) | (tier & 7) << 5);
+  if (f == me.flags) return;
+  me.flags = f;
+  if (advertising) advertise();
+}
+
 bool beaconOn() { return advertising; }
 
 }  // namespace peer

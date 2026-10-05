@@ -90,6 +90,7 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
       s.peerLevel = peer.level;
       s.peerHue = peer.hue;
       s.flags = peer.flags & 0x1F;  // equipped hat id
+      s.peerHoard = peer.flags >> 5;
       strlcpy(s.name, peer.name, sizeof(s.name));
       xQueueSend(q, &s, 0);
       return;

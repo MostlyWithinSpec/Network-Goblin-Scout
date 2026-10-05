@@ -56,6 +56,10 @@
 #define XP_NEW_PEER             100        // met a new goblin
 #define XP_PEER_REUNION         25         // met a known goblin again
 #define XP_BOARD_CLEARED        100        // finished all three quests
+#define XP_SNIFF_WIN            60         // goblin sniff-off: bigger hoard
+#define XP_SNIFF_DRAW           40
+#define XP_SNIFF_LOSE           20         // everyone gets something for showing up
+#define SNIFF_COOLDOWN_MS       (6UL * 60 * 60 * 1000)  // one sniff-off per goblin per 6 h
 
 // ---- Quests & needs -------------------------------------------------------
 #define QUEST_COOLDOWN_MIN      30         // minutes of scanning before a new board after clearing one

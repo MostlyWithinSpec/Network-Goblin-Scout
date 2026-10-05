@@ -185,6 +185,8 @@ void handleEvents(uint32_t now) {
     log_i("event: %s", e.text);
     ui::onEvent(e, now);
     if (e.type == EventType::LevelUp) peer::update((uint16_t)e.value);
+    if (e.type == EventType::NewWifi || e.type == EventType::NewBle || e.type == EventType::New154)
+      peer::setHoardTier(engine.hoardTier());  // re-advertises only when the tier changes
     if (e.type == EventType::TrackerAlert && display::asleep()) display::sleep(false);  // wake for safety alerts
   }
 }
@@ -288,6 +290,7 @@ void setup() {
 
   // Goblin identity + "I'm a goblin" beacon (needs BLE, which scans.begin() started).
   peer::setHat(st.hat);
+  peer::setHoardTier(engine.hoardTier());
   if (st.beacon) peer::startBeacon(engine.level());
 
   if (!storage::ok()) ui::notice("No SD card: progress won't save", millis());

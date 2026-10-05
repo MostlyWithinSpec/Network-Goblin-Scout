@@ -9,6 +9,7 @@
 #include "Achievements.h"
 #include "Hats.h"
 #include "Quests.h"
+#include "../social/Sniff.h"
 #include "config.h"
 
 Engine engine;
@@ -237,6 +238,7 @@ void Engine::processPeer(const Sighting& s) {
   slot->hue = s.peerHue;
   slot->rssi = s.rssi;
   slot->hat = s.flags;
+  slot->hoard = s.peerHoard;
   blip(id(Radio::Peer, s.mac, 4), s.rssi, Radio::Peer);
   slot->lastSeenMs = now;
   if (!encounter) return;
@@ -258,7 +260,38 @@ void Engine::processPeer(const Sighting& s) {
   push(isNew ? EventType::PeerNew : EventType::PeerReunion, s.peerLevel, t, slot);
   addXp(isNew ? XP_NEW_PEER : XP_PEER_REUNION);
   feed(-100, -400);
+  sniffOff(*slot);
   checkAchievements();
+}
+
+void Engine::sniffOff(const NearbyPeer& p) {
+  // Once per goblin every few hours, so two Scouts can't farm it by stepping in and out of range.
+  uint32_t now = millis();
+  SniffMemo* memo = &sniffMemo_[0];
+  for (auto& m : sniffMemo_) {
+    if (m.id == p.id) { memo = &m; break; }
+    if (m.atMs < memo->atMs) memo = &m;
+  }
+  if (memo->id == p.id && now - memo->atMs < SNIFF_COOLDOWN_MS) return;
+  memo->id = p.id;
+  memo->atMs = now ? now : 1;
+
+  uint8_t mine = hoardTier();
+  sniff::Result r = sniff::judge(mine, level(), p.hoard, p.level);
+  stats_.sniffOffs++;
+  if (r == sniff::kWin) stats_.sniffWins++;
+  uint32_t xp = r == sniff::kWin ? XP_SNIFF_WIN : r == sniff::kDraw ? XP_SNIFF_DRAW : XP_SNIFF_LOSE;
+  char t[40];
+  snprintf(t, sizeof(t), r == sniff::kWin ? "Sniff-off won! +%lu XP" : r == sniff::kDraw ? "Sniff-off draw! +%lu XP"
+                                                                                       : "Sniff-off lost. +%lu XP",
+           (unsigned long)xp);
+  // value: result | my tier << 8 | their tier << 16 | xp << 24 (the UI unpacks it)
+  push(EventType::SniffOff, r | (uint32_t)mine << 8 | (uint32_t)p.hoard << 16 | (xp > 255 ? 255 : xp) << 24, t, &p);
+  addXp(xp);
+}
+
+uint8_t Engine::hoardTier() const {
+  return sniff::tier(stats_.wifiUnique + stats_.bleUnique + stats_.t154Unique);
 }
 
 void Engine::watchTracker(uint64_t tid, const Sighting& s) {
@@ -502,11 +535,13 @@ void Engine::push(EventType t, uint32_t v, const char* text, const NearbyPeer* p
   e.peerLevel = 0;
   e.peerHue = 0;
   e.peerHat = 0;
+  e.peerHoard = 0;
   if (p) {
     strlcpy(e.peerName, p->name, sizeof(e.peerName));
     e.peerLevel = p->level;
     e.peerHue = p->hue;
     e.peerHat = p->hat;
+    e.peerHoard = p->hoard;
   }
   qHead_ = next;
 }
