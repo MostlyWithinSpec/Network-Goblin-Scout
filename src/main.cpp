@@ -38,6 +38,7 @@ bool wasTouched = false;
 bool btnWasDown = false;
 const char* splashLine = "";
 uint32_t perfFrames = 0, perfRenderUs = 0, perfFlushUs = 0, perfLogMs = 0;
+ui::Profile perfParts = {};
 
 void deselectSpiDevices() {
   // Everything shares one SPI bus: make sure no chip is listening before init.
@@ -113,6 +114,7 @@ ui::Hooks makeHooks() {
   h.pet = [] { engine.pet(); };
   h.sfx = onSfx;
   h.led = fx::led;
+  h.micros = [] { return (uint32_t)::micros(); };
   return h;
 }
 
@@ -253,13 +255,24 @@ void loop() {
       perfRenderUs += t1 - t0;
       perfFlushUs += micros() - t1;
       perfFrames++;
+      const ui::Profile& p = ui::profile();
+      perfParts.background += p.background;
+      perfParts.screen += p.screen;
+      perfParts.chrome += p.chrome;
+      perfParts.overlays += p.overlays;
     }
     if (now - perfLogMs >= 10000) {  // frame timing, for tuning on real hardware
-      if (perfFrames)
-        log_i("ui: %lu fps, render %lu ms, screen push %lu ms", (unsigned long)(perfFrames * 1000 / (now - perfLogMs)),
-              (unsigned long)(perfRenderUs / perfFrames / 1000), (unsigned long)(perfFlushUs / perfFrames / 1000));
+      if (perfFrames) {
+        uint32_t n = perfFrames * 1000;  // -> ms
+        log_i("ui: %lu fps, render %lu ms (bg %lu, screen %lu, bars %lu, overlays %lu), screen push %lu ms",
+              (unsigned long)(perfFrames * 1000 / (now - perfLogMs)), (unsigned long)(perfRenderUs / n),
+              (unsigned long)(perfParts.background / n), (unsigned long)(perfParts.screen / n),
+              (unsigned long)(perfParts.chrome / n), (unsigned long)(perfParts.overlays / n),
+              (unsigned long)(perfFlushUs / n));
+      }
       perfLogMs = now;
       perfFrames = perfRenderUs = perfFlushUs = 0;
+      perfParts = {};
     }
   }
 

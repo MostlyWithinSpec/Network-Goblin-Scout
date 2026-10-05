@@ -21,7 +21,14 @@ struct Hooks {
   void (*pet)() = nullptr;               // goblin was petted
   void (*sfx)(Sfx s) = nullptr;
   void (*led)(uint8_t r, uint8_t g, uint8_t b, uint16_t ms) = nullptr;
+  uint32_t (*micros)() = nullptr;        // optional: enables profile()
 };
+
+// Time spent in each part of the last render(), in microseconds (needs Hooks::micros).
+struct Profile {
+  uint32_t background, screen, chrome, overlays;
+};
+const Profile& profile();
 
 // bgBuffer: optional 320x240 RGB565 scratch buffer for the pre-rendered background
 // (saves redrawing it every frame). May be null.

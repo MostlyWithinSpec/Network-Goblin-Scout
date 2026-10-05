@@ -968,6 +968,9 @@ Companion& pet() { return companion; }
 
 bool animating() { return overlayCount > 0 || bannerCount > 0 || partCount > 0; }
 
+Profile prof;
+const Profile& profile() { return prof; }
+
 void debugShow(int sc, int page) {
   screen = (Screen)sc;
   statsPage = sc == 1 ? page : 0;
@@ -1101,7 +1104,9 @@ void render(gfx::Surface& s, const UiModel& m) {
     }
   }
 
+  uint32_t t0 = hooks.micros ? hooks.micros() : 0;
   drawBackground(s, m);
+  uint32_t t1 = hooks.micros ? hooks.micros() : 0;
 
   // content slides in after a tab change
   float slide = 1 - easeOut((m.now - screenChangedAt) / 260.0f);
@@ -1116,13 +1121,22 @@ void render(gfx::Surface& s, const UiModel& m) {
   }
   s.offset(0, 0);
   if (slide > 0.01f) s.fillRect(0, kBodyY, W, kBodyH, kBgBottom, a8(200 * slide));
+  uint32_t t2 = hooks.micros ? hooks.micros() : 0;
 
   drawStatusBar(s, m);
   drawNav(s);
+  uint32_t t3 = hooks.micros ? hooks.micros() : 0;
   if (screen == Screen::Badges && badgeDetail >= 0) drawBadgeDetail(s, m);
   drawBanner(s, m.now);
   drawOverlay(s, m);
   drawParticles(s);
+  if (hooks.micros) {
+    uint32_t t4 = hooks.micros();
+    prof.background = t1 - t0;
+    prof.screen = t2 - t1;
+    prof.chrome = t3 - t2;
+    prof.overlays = t4 - t3;
+  }
 }
 
 void splash(gfx::Surface& s, uint32_t now, const char* line) {
