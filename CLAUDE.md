@@ -42,6 +42,19 @@ python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, 
 Use the preview to check any UI change before handing a build to the owner: it is the only way to
 see the screens without the hardware. Keep `src/ui/` free of Arduino/hardware calls so it keeps working.
 
+**The ESP32-C5 has no FPU** (`-march=rv32imac`): every float op is a slow software call, and the PC
+preview hides that. No float maths in per-pixel loops; floats are fine once per shape/frame.
+Measure UI cost on the real CPU type before shipping drawing changes:
+
+```sh
+pip install unicorn pyelftools
+sh tools/bench/build.sh && python3 tools/bench/run.py tools/bench/bench.elf
+```
+
+It cross-compiles the UI for rv32imac, runs it in an emulator and prints instructions per frame
+plus the hottest functions and soft-float callers. (Instructions only: PSRAM latency comes on top.)
+v0.2.0 measured 31 M instr/frame on Home (owner saw 200 ms render); v0.2.2 is ~3.4 M.
+
 ### Building in a sandbox without the PlatformIO registry
 
 If `api.registry.platformio.org` / `dl.registry.platformio.org` are blocked, `pio run`
@@ -123,7 +136,9 @@ Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board 
 the environment stat was dropped. GPS and speaker not connected yet.
 
 v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
-v0.2.1 adds Turbo display + changed-areas-only flush; awaiting the `ui:` serial timing line.
+v0.2.1 adds Turbo display + changed-areas-only flush. Owner log (v0.2.1): crystal 48 MHz,
+render ~200 ms, push 33 ms, 2-4 fps → render was the bottleneck (soft-float). v0.2.2 rewrote the
+renderer in integer maths (~9x fewer instructions); awaiting the next `ui:` line.
 
 Untested on hardware: goblin beacon + encounters. Test with one board and a phone: nRF Connect →
 Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`

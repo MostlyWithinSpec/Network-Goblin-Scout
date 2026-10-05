@@ -2,3 +2,4 @@
 .vscode/
 *.tmp
 tools/preview/out/
+tools/bench/*.elf
