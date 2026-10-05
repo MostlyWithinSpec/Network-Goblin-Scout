@@ -1,0 +1,65 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # ~/.platformio holds the platform, toolchain and Arduino core (~1.5 GB);
+      # .pio/libdeps holds the libraries. Build output is never cached, so every
+      # run is a clean build and warnings can't hide in stale objects.
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            .pio/libdeps
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO Core
+        run: pip install platformio==6.2.0
+
+      - name: Build
+        run: |
+          set -o pipefail
+          pio run 2>&1 | tee build.log
+
+      - name: Fail on warnings in our code
+        run: |
+          if grep -E '^(src|include)/[^:]+:[0-9]+:[0-9]+: warning:' build.log; then
+            echo "::error::Compiler warnings in src/ or include/ (see above)"
+            exit 1
+          fi
+
+      - name: Collect binaries
+        run: |
+          mkdir dist
+          cp .pio/build/ng-scout/firmware.bin dist/
+          cp .pio/build/ng-scout/firmware.factory.bin dist/
+          cat > dist/FLASHING.txt <<'EOF'
+          firmware.factory.bin  Full image (bootloader + partitions + app). Flash at 0x0.
+                                Use this for a first flash or to recover a board.
+          firmware.bin          App only. Flash at 0x10000 to update an already-flashed board.
+
+          esptool:  esptool --chip esp32c5 write-flash 0x0 firmware.factory.bin
+          Browser:  https://espressif.github.io/esptool-js/  (Chrome/Edge), add the file at 0x0.
+          EOF
+          (cd dist && sha256sum *.bin > SHA256SUMS.txt)
+          sed -n '/Memory Type Usage/,/Total image size/p' build.log > dist/memory-usage.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ng-scout-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
