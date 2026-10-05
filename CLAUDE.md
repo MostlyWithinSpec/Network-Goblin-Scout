@@ -27,7 +27,20 @@ pio device monitor               # serial log, 115200
 - Logging: framework/libraries at level 2 (warn) because the BLE library logs every
   advertiser's raw MAC at info; our code is forced to level 3 (info) by
   `include/ng_log_level.h`. Use `log_i/log_w/log_e`.
-- CI: `.github/workflows/build.yml` builds every push and uploads the binaries as an artifact.
+- CI: `.github/workflows/build.yml` builds every push and uploads the binaries as an artifact,
+  runs the PC unit tests and uploads rendered UI screenshots.
+
+### PC-side tools (no board needed)
+
+```sh
+g++ -std=c++17 -Wall -Wextra -I src test/test_ieee802154.cpp -o /tmp/t && /tmp/t   # 802.15.4 parser
+g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/t && /tmp/t         # beacon codec
+sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
+python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
+```
+
+Use the preview to check any UI change before handing a build to the owner: it is the only way to
+see the screens without the hardware. Keep `src/ui/` free of Arduino/hardware calls so it keeps working.
 
 ### Building in a sandbox without the PlatformIO registry
 
@@ -68,6 +81,10 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 5. **BLE callbacks never touch SPI** (display, SD and touch share one bus) — queue only;
    the main loop drains the queue.
 6. Achievement ids in `ACHIEVEMENTS[]` are saved to SD: append only, never reorder or rename.
+   Same for `Radio` enum values and `NG_SAVED_COUNTERS` names (both feed stored data).
+7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
+   per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
+   802.15.4 transmissions.
 
 ## Layout
 
@@ -75,10 +92,15 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 include/board.h, config.h, ng_log_level.h
 src/main.cpp         setup + non-blocking loop
 src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20
-src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (stub), ScanManager
+src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
+                     Ieee802154Frame.h (pure MAC header parser)
+src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format
 src/core/            Engine (sighting -> XP -> achievements -> persistence), Achievements, SeenStore, HashSet64
-src/ui/              Ui screens, Companion (pet), Sprites (BMP packs from SD)
+src/ui/              Pure UI: Ui (screens/overlays/input), Companion (animated logo goblin), Widgets, Theme,
+                     Model (per-frame snapshot from main.cpp), gfx/ (renderer), assets/ (generated)
+                     Sprites.cpp is the one device-only file (loads SD packs)
 src/diag/            Hardware bring-up mode
+test/, tools/        PC unit tests, asset generator, UI preview
 ```
 
 ## Hardware bring-up mode
@@ -92,27 +114,25 @@ colour swatches and corner marks. Press RESET to exit. Counts only — no MACs/S
 
 ## Hardware status (from flash reports — update as results come in)
 
-Confirmed working on the owner's board (bring-up mode, first flash):
-splash/display, colour order (swatches match), rotation, RGB LED, PSRAM (8 MB, framebuffer
-in PSRAM), microSD mount + write test, touch IRQ, Wi-Fi scanning on 2.4 and 5 GHz, BLE scanning.
+Confirmed working on the owner's board (v0.1 bring-up + main app):
+display, colour order, rotation, RGB LED, PSRAM (8 MB, framebuffer in PSRAM), microSD, touch
+(both axes inverted, `TOUCH_INVERT_X/Y 1`), Wi-Fi on 2.4 and 5 GHz, BLE scanning, on-screen tabs.
+BOOT held during power-on/flashing = download mode (confirmed), hence the 1.5 s window.
 
-Still unknown / open:
+Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board (schematic only);
+the environment stat was dropped. GPS and speaker not connected yet.
 
-- **Touch axes**: first flash showed the crosshair opposite the finger, so both axes are
-  now inverted (`TOUCH_INVERT_X/Y 1`). Awaiting confirmation; if only one axis is right,
-  flip the other back. Min/max calibration (`TOUCH_RAW_*`) still unverified; the vendor's
-  TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
-- **AHT20 (U28)**: on the schematic (IO9 SDA / IO8 SCL, 4.7k pull-ups) but did not answer on
-  the first flash. Possibly not fitted on this board. Check the I2C scan line / look for the part.
-- **SPI speed**: display at 40 MHz (`DISPLAY_SPI_HZ`), SD at 20 MHz, touch at 2.5 MHz. No glitches reported.
-- **Which USB-C port carries serial logs**: we log to the C5's native USB (USB-Serial-JTAG,
-  `ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). The other port is a CH340 on
-  UART0 (GPIO 11/12).
-- **BOOT button at power-on**: assumed to enter download mode (Espressif strapping); unconfirmed.
-- **GPS, speaker**: not connected yet.
+Untested on hardware (v0.2): 802.15.4 scanner, goblin beacon + encounters (needs two boards or a
+BLE advertiser app sending the same manufacturer data), new GUI frame rate (serial logs
+`ui: N fps, render X ms, screen push Y ms`), Wi-Fi/BLE/802.15.4 coexistence.
 
-## Roadmap (don't start until the owner confirms hardware works)
+Still unknown:
+- **Touch min/max calibration** (`TOUCH_RAW_*`): unverified; vendor TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
+- **SPI speed**: display 40 MHz, SD 20 MHz, touch 2.5 MHz. A full-frame push is ~31 ms at 40 MHz.
+- **Which USB-C port carries serial logs**: native USB (USB-Serial-JTAG) vs CH340 on UART0 (GPIO 11/12).
 
-AHT20 environment stat -> 802.15.4 (Zigbee/Thread) passive scanner -> battery support
-(LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C) ->
-account pairing and summary sync.
+## Roadmap
+
+Done in v0.2 (awaiting hardware test): 802.15.4 scanner, goblin encounters, GUI overhaul, 110 achievements.
+Next: battery support (LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C)
+-> account pairing and summary sync.

@@ -63,3 +63,30 @@ jobs:
           name: ng-scout-${{ github.sha }}
           path: dist/
           if-no-files-found: error
+
+  host:
+    # Pure-C++ parts (802.15.4 parser, goblin beacon codec, the whole UI) build and run on Linux.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Unit tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_ieee802154.cpp -o t154 && ./t154
+          g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_peer.cpp -o tpeer && ./tpeer
+
+      - name: Render UI preview
+        run: |
+          pip install pillow
+          sh tools/preview/run.sh 2>&1 | tee preview.log
+          if grep -q "warning:" preview.log; then echo "::error::warnings in UI code"; exit 1; fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ui-preview-${{ github.sha }}
+          path: tools/preview/out/*.png
+          if-no-files-found: error
