@@ -59,11 +59,18 @@ bool WifiScanner::poll(void (*sink)(const Sighting&), uint32_t& seen) {
     const uint8_t* b = WiFi.BSSID(i);
     if (!b) continue;
     memcpy(s.mac, b, 6);
+    s.macLen = 6;
     strlcpy(s.name, WiFi.SSID(i).c_str(), sizeof(s.name));
     s.rssi = (int8_t)WiFi.RSSI(i);
     s.channel = (uint8_t)WiFi.channel(i);
     s.auth = categorize(WiFi.encryptionType(i));
     s.stableAddr = true;
+    s.panId = 0xFFFF;
+    if (!s.name[0]) s.flags |= sflag::kHidden;
+    if (const auto* rec = (const wifi_ap_record_t*)WiFi.getScanInfoByIndex(i)) {
+      if (rec->phy_11ax) s.flags |= sflag::kWifi6;
+      if (rec->wps) s.flags |= sflag::kWps;
+    }
     sink(s);
     seen++;
   }

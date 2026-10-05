@@ -1,114 +1,180 @@
 #include "Companion.h"
-#include "config.h"
+#include <math.h>
+#include <initializer_list>
+#include "Theme.h"
+#include "assets/GoblinArt.h"
+
+using namespace theme;
 
 namespace {
-const uint16_t SKIN = 0x5E8A;     // goblin green
-const uint16_t SKIN_DK = 0x3C66;
-const uint16_t EYE = 0xFFFF;
-const uint16_t PUPIL = 0x0000;
-const uint16_t ACCENT = 0xFD20;   // Network Goblin orange
-}  // namespace
+const float kPi = 3.14159265f;
+const uint16_t kLid = gfx::hex(0x4C8A2A);
+const uint16_t kLidLine = gfx::hex(0x1B3510);
 
-void Companion::react(CState s, uint32_t ms) {
-  temp_ = s;
-  tempUntil_ = millis() + ms;
+float wave(uint32_t now, float periodS, float phase = 0) { return sinf((now / 1000.0f / periodS + phase) * 2 * kPi); }
+
+// Cheap deterministic noise for flicker (0..255).
+uint8_t noise(uint32_t v) {
+  v ^= v >> 13; v *= 0x5bd1e995; v ^= v >> 15;
+  return (uint8_t)v;
 }
 
-CState Companion::state() const {
-  if (tempUntil_ && (int32_t)(millis() - tempUntil_) < 0) return temp_;
+bool hopping(CState st) {
+  return st == CState::Discovered || st == CState::Excited || st == CState::LevelUp || st == CState::Achievement;
+}
+
+void shadow(gfx::Surface& s, int16_t cx, int16_t y, float rx, uint8_t a) {
+  for (int dy = -3; dy <= 3; dy++) {
+    float k = sqrtf(1 - (dy * dy) / 12.0f);
+    int16_t w = (int16_t)(rx * k);
+    s.hline(cx - w, y + dy, 2 * w, 0x0000, (uint8_t)(a * k));
+  }
+}
+}  // namespace
+
+void Companion::react(CState s, uint32_t ms, uint32_t now) {
+  temp_ = s;
+  tempUntil_ = now + ms;
+}
+
+CState Companion::state(uint32_t now) const {
+  if (tempUntil_ && (int32_t)(now - tempUntil_) < 0) return temp_;
   return base_;
 }
 
-void Companion::draw(Arduino_GFX* g, int16_t x, int16_t y, uint32_t tick) {
-  CState s = state();
-  const Frame* f = pack.frame(s, tick / 3);  // ~3 fps animation at 10 fps UI
-  if (!f) { drawGoblin(g, x, y, s, tick); return; }
-
-  // Pixel-art packs: scale small sprites up to fill the box.
-  int scale = (f->w <= SPRITE_BOX / 2 && f->h <= SPRITE_BOX / 2) ? 2 : 1;
-  int16_t ox = x + (SPRITE_BOX - f->w * scale) / 2;
-  int16_t oy = y + (SPRITE_BOX - f->h * scale) / 2;
-  if (scale == 1) {
-    g->draw16bitRGBBitmapWithTranColor(ox, oy, f->px, SPRITE_TRANSPARENT, f->w, f->h);
+void Companion::draw(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, const Frame* custom) const {
+  CState st = state(now);
+  if (custom && custom->px) {  // SD sprite pack
+    int scale = (custom->w <= 64 && custom->h <= 64) ? 2 : 1;
+    float bob = hopping(st) ? -fabsf(wave(now, 0.5f)) * 8 : wave(now, 2.4f) * 2;
+    shadow(s, x, y + 2, custom->w * scale * 0.35f, 90);
+    s.blitKeyed(custom->px, custom->w, custom->h, x - custom->w * scale / 2,
+                (int16_t)(y - custom->h * scale + bob), 0xF81F, scale);
     return;
   }
-  for (uint16_t j = 0; j < f->h; j++)
-    for (uint16_t i = 0; i < f->w; i++) {
-      uint16_t c = f->px[j * f->w + i];
-      if (c != SPRITE_TRANSPARENT) g->fillRect(ox + i * 2, oy + j * 2, 2, 2, c);
-    }
+  drawGoblin(s, x, y, now, st, Look());
 }
 
-// Built-in placeholder goblin, drawn with primitives so the device works with no SD card.
-void Companion::drawGoblin(Arduino_GFX* g, int16_t x, int16_t y, CState s, uint32_t tick) {
-  int16_t cx = x + SPRITE_BOX / 2;
-  int16_t cy = y + SPRITE_BOX / 2 + 10;
-  bool bounce = (s == CState::Discovered || s == CState::Excited || s == CState::LevelUp ||
-                 s == CState::Achievement);
-  if (bounce) cy -= (tick % 4 < 2) ? 6 : 0;
-  bool sleeping = (s == CState::Sleeping);
+void Companion::drawGoblin(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, CState st, const Look& look) {
+  using namespace art;
+  bool sleeping = st == CState::Sleeping;
+  bool scanning = st == CState::Scanning || st == CState::Searching;
+  bool hop = hopping(st);
 
-  // antenna + signal arcs
-  g->drawLine(cx, cy - 38, cx + 10, cy - 58, SKIN_DK);
-  g->fillCircle(cx + 10, cy - 58, 4, ACCENT);
-  if (s == CState::Scanning || s == CState::Searching) {
-    int arcs = tick % 4;
-    for (int a = 1; a <= arcs; a++) g->drawCircle(cx + 10, cy - 58, 4 + a * 5, ACCENT);
-  }
-
-  // ears
-  g->fillTriangle(cx - 34, cy - 12, cx - 62, cy - 34, cx - 26, cy + 6, SKIN);
-  g->fillTriangle(cx + 34, cy - 12, cx + 62, cy - 34, cx + 26, cy + 6, SKIN);
-  // head
-  g->fillCircle(cx, cy, 40, SKIN);
-  g->drawCircle(cx, cy, 40, SKIN_DK);
-
-  // eyes
-  bool blink = (tick % 40) == 0;
-  if (sleeping || blink) {
-    g->drawFastHLine(cx - 22, cy - 6, 14, PUPIL);
-    g->drawFastHLine(cx + 8, cy - 6, 14, PUPIL);
+  // Motion: breathing bob, a quicker jitter while scanning, hops when excited.
+  float bob = 0, sx = 1, sy = 1;
+  if (hop) {
+    float h = fabsf(wave(now, 0.55f));
+    bob = -h * 12;
+    float land = 1 - h;  // squash near the ground, stretch in the air
+    sy = 1 - 0.07f * land * land + 0.03f * h;
+    sx = 1 + 0.05f * land * land;
+  } else if (sleeping) {
+    sy = 0.985f + 0.015f * wave(now, 3.2f);
+  } else if (scanning) {
+    bob = wave(now, 0.9f) * 1.5f;
   } else {
-    int look = 0;
-    if (s == CState::Scanning || s == CState::Searching) look = ((tick / 5) % 3) - 1;  // eyes dart around
-    g->fillCircle(cx - 15, cy - 6, 9, EYE);
-    g->fillCircle(cx + 15, cy - 6, 9, EYE);
-    g->fillCircle(cx - 15 + look * 4, cy - 5, 4, PUPIL);
-    g->fillCircle(cx + 15 + look * 4, cy - 5, 4, PUPIL);
+    bob = wave(now, 2.4f) * 2.5f;
+    sy = 1 + 0.012f * wave(now, 2.4f, 0.25f);
+  }
+  float scX = look.scale * sx, scY = look.scale * sy;
+  int16_t dw = (int16_t)lroundf(kGoblinW * scX), dh = (int16_t)lroundf(kGoblinH * scY);
+  int16_t left = x - dw / 2;
+  int16_t top = (int16_t)(y - dh + bob);
+
+  // Shadow shrinks as the goblin leaves the ground.
+  shadow(s, x, y, dw * 0.33f * (1 + bob / 40.0f), (uint8_t)(110 + bob * 3));
+
+  // Aura colour by mood.
+  uint16_t auraC = kCyan;
+  float auraA = 45 + 20 * wave(now, 2.0f);
+  if (look.tint) { auraC = look.tintColor; auraA = 80 + 30 * wave(now, 1.0f); }
+  else if (st == CState::LevelUp || st == CState::Achievement) { auraC = kGoldC; auraA = 130 + 50 * wave(now, 0.4f); }
+  else if (hop) { auraC = kGreen; auraA = 90 + 40 * wave(now, 0.5f); }
+  else if (scanning) { auraA = 60 + 30 * wave(now, 0.7f); }
+  else if (sleeping) { auraC = kViolet; auraA = 25; }
+  if (look.aura) {
+    if (look.scale == 1.0f)
+      s.alphaMask(kGoblinAura, kGoblinAuraW, kGoblinAuraH, left - kGoblinAuraPad, top - kGoblinAuraPad + (dh - kGoblinH),
+                  auraC, (uint8_t)(auraA * look.alpha / 255));
+    else
+      s.glow(x, top + dh * 0.5f, dw * 0.62f, auraC, (uint8_t)(auraA * look.alpha / 255));
   }
 
-  // mouth
-  switch (s) {
-    case CState::Discovered:
-    case CState::Excited:
-    case CState::LevelUp:
-    case CState::Achievement:
-      g->fillCircle(cx, cy + 16, 10, PUPIL);
-      g->fillRect(cx - 11, cy + 5, 22, 11, SKIN);
-      g->fillTriangle(cx - 6, cy + 16, cx - 2, cy + 16, cx - 4, cy + 21, EYE);  // fang
-      break;
-    case CState::LowBattery:
-    case CState::Offline:
-      g->drawLine(cx - 8, cy + 20, cx + 8, cy + 16, PUPIL);
-      break;
-    default:
-      g->drawLine(cx - 10, cy + 16, cx + 10, cy + 16, PUPIL);
-      g->drawPixel(cx - 11, cy + 15, PUPIL);
-      g->drawPixel(cx + 11, cy + 15, PUPIL);
+  // Pixel effects: glowing eyes, flickering device screen.
+  gfx::SpriteFx fx;
+  fx.scaleX = scX;
+  fx.scaleY = scY;
+  fx.flipX = look.flip;
+  fx.alpha = look.alpha;
+  fx.skinTintOn = look.tint;
+  fx.skinTint = look.tintColor;
+  fx.eyeColor = (st == CState::LevelUp || st == CState::Achievement) ? kGoldC : kRed;
+  fx.eyeMix = (uint8_t)(70 + 60 * (0.5f + 0.5f * wave(now, 1.7f)));
+  if (scanning) {
+    uint8_t n = noise(now / 70);
+    fx.screenColor = n > 200 ? 0xFFFF : kCyan;
+    fx.screenMix = (uint8_t)(110 + (n >> 2));
+  } else if (hop) {
+    fx.screenColor = kGreen;
+    fx.screenMix = 180;
+  } else {
+    fx.screenColor = kCyan;
+    fx.screenMix = (uint8_t)(50 + 40 * (0.5f + 0.5f * wave(now, 2.0f)));
   }
+  if (sleeping) fx.bright = 150;
+  s.sprite(kGoblinPx, kGoblinAlpha, kGoblinClass, kGoblinW, kGoblinH, left, top, fx);
 
-  if (sleeping) {
-    g->setTextColor(0xFFFF);
-    g->setTextSize(2);
-    g->setCursor(cx + 36, cy - 44 - (tick / 5) % 6);
-    g->print("z");
-  }
-  if (s == CState::LevelUp || s == CState::Achievement) {
-    for (int i = 0; i < 6; i++) {  // sparkles
-      int16_t sx = x + ((tick * 7 + i * 37) % SPRITE_BOX);
-      int16_t sy = y + ((tick * 3 + i * 53) % 40);
-      g->drawFastHLine(sx - 3, sy, 7, 0xFFE0);
-      g->drawFastVLine(sx, sy - 3, 7, 0xFFE0);
+  // Blink every ~3.7 s (always shut when asleep): skin-coloured lids over both eyes.
+  bool blink = sleeping || (now % 3700) < 130 || ((now + 400) % 9100) < 110;
+  if (blink) {
+    for (const int16_t* e : {kGoblinEyeL, kGoblinEyeR}) {
+      int16_t ex0 = e[0], ex1 = e[2];
+      if (look.flip) { ex0 = kGoblinW - 1 - e[2]; ex1 = kGoblinW - 1 - e[0]; }
+      int16_t x0 = left + (int16_t)(ex0 * scX) - 1, x1 = left + (int16_t)((ex1 + 1) * scX) + 1;
+      int16_t y0 = top + (int16_t)(e[1] * scY) - 1, y1 = top + (int16_t)((e[3] + 1) * scY) + 1;
+      uint16_t lid = look.tint ? gfx::dim(look.tintColor, 170) : kLid;
+      if (sleeping) lid = gfx::dim(lid, 150);
+      s.fillRoundRect(x0, y0, x1 - x0, y1 - y0, 2, lid, look.alpha);
+      s.hline(x0 + 1, y1 - 2, x1 - x0 - 2, kLidLine, look.alpha);
     }
   }
+
+  // Device screen position (for signal arcs).
+  int16_t scrX = left + (int16_t)((look.flip ? kGoblinW - 1 - kGoblinScreenX : kGoblinScreenX) * scX);
+  int16_t scrY = top + (int16_t)(kGoblinScreenY * scY);
+  if (scanning) {
+    float base = look.flip ? 270 - 50 : 30;
+    for (int i = 0; i < 3; i++) {
+      float ph = fmodf(now / 900.0f + i / 3.0f, 1.0f);
+      s.ring(scrX, scrY, 8 + ph * 26, 2, kCyan, (uint8_t)(200 * (1 - ph) * look.alpha / 255), base, 100);
+    }
+  }
+  if (sleeping) {
+    for (int i = 0; i < 3; i++) {
+      float ph = fmodf(now / 2600.0f + i / 3.0f, 1.0f);
+      int16_t zx = left + dw * 0.62f + ph * 22 + 4 * sinf(ph * 6);
+      int16_t zy = top + 6 - ph * 34;
+      const gfx::Font& f = i == 1 ? fTitle() : fSmall();
+      s.text(f, zx, zy, "z", kText, (uint8_t)(220 * sinf(ph * kPi)));
+    }
+  }
+}
+
+void Companion::drawSmall(gfx::Surface& s, int16_t x, int16_t y, uint32_t now, const Look& look) {
+  using namespace art;
+  float bob = wave(now, 0.8f) * 2;
+  float scX = look.scale, scY = look.scale;
+  int16_t dw = (int16_t)(kGoblinSmallW * scX), dh = (int16_t)(kGoblinSmallH * scY);
+  shadow(s, x, y, dw * 0.33f, 90);
+  if (look.aura) s.glow(x, y - dh * 0.5f, dw * 0.7f, look.tint ? look.tintColor : kCyan, 90);
+  gfx::SpriteFx fx;
+  fx.scaleX = scX;
+  fx.scaleY = scY;
+  fx.flipX = look.flip;
+  fx.alpha = look.alpha;
+  fx.skinTintOn = look.tint;
+  fx.skinTint = look.tintColor;
+  s.sprite(kGoblinSmallPx, kGoblinSmallAlpha, kGoblinSmallClass, kGoblinSmallW, kGoblinSmallH, x - dw / 2,
+           (int16_t)(y - dh + bob), fx);
 }

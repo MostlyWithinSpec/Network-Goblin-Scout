@@ -27,7 +27,20 @@ pio device monitor               # serial log, 115200
 - Logging: framework/libraries at level 2 (warn) because the BLE library logs every
   advertiser's raw MAC at info; our code is forced to level 3 (info) by
   `include/ng_log_level.h`. Use `log_i/log_w/log_e`.
-- CI: `.github/workflows/build.yml` builds every push and uploads the binaries as an artifact.
+- CI: `.github/workflows/build.yml` builds every push and uploads the binaries as an artifact,
+  runs the PC unit tests and uploads rendered UI screenshots.
+
+### PC-side tools (no board needed)
+
+```sh
+g++ -std=c++17 -Wall -Wextra -I src test/test_ieee802154.cpp -o /tmp/t && /tmp/t   # 802.15.4 parser
+g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/t && /tmp/t         # beacon codec
+sh tools/preview/run.sh        # renders the real UI to tools/preview/out/*.png (needs Pillow)
+python3 tools/gen_assets.py    # regenerate src/ui/assets/* from assets/ (logo, fonts)
+```
+
+Use the preview to check any UI change before handing a build to the owner: it is the only way to
+see the screens without the hardware. Keep `src/ui/` free of Arduino/hardware calls so it keeps working.
 
 ### Building in a sandbox without the PlatformIO registry
 
@@ -68,6 +81,10 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 5. **BLE callbacks never touch SPI** (display, SD and touch share one bus) — queue only;
    the main loop drains the queue.
 6. Achievement ids in `ACHIEVEMENTS[]` are saved to SD: append only, never reorder or rename.
+   Same for `Radio` enum values and `NG_SAVED_COUNTERS` names (both feed stored data).
+7. **The only transmission is the goblin beacon** (`src/social/`): non-connectable BLE advert, random
+   per-boot address, no user data, user-toggleable. Never add probe requests, active scans or
+   802.15.4 transmissions.
 
 ## Layout
 
@@ -75,10 +92,15 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
 include/board.h, config.h, ng_log_level.h
 src/main.cpp         setup + non-blocking loop
 src/hal/             Display (PSRAM canvas), Touch (XPT2046), Storage (SD), Gps, Fx (LED/speaker), Aht20
-src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (stub), ScanManager
+src/scanners/        Scanner interface, WifiScanner, BleScanner, ThreadScanner (802.15.4), ScanManager,
+                     Ieee802154Frame.h (pure MAC header parser)
+src/social/          Peer identity (NVS) + goblin BLE beacon; PeerCodec.h = pure wire format
 src/core/            Engine (sighting -> XP -> achievements -> persistence), Achievements, SeenStore, HashSet64
-src/ui/              Ui screens, Companion (pet), Sprites (BMP packs from SD)
+src/ui/              Pure UI: Ui (screens/overlays/input), Companion (animated logo goblin), Widgets, Theme,
+                     Model (per-frame snapshot from main.cpp), gfx/ (renderer), assets/ (generated)
+                     Sprites.cpp is the one device-only file (loads SD packs)
 src/diag/            Hardware bring-up mode
+test/, tools/        PC unit tests, asset generator, UI preview
 ```
 
 ## Hardware bring-up mode
@@ -90,29 +112,33 @@ framebuffer location, SD write test, raw touch, Wi-Fi/BLE scan counts, GPS NMEA 
 AHT20 reading (tries both I2C pin orders), I2C scan, BOOT state, LED colour cycle,
 colour swatches and corner marks. Press RESET to exit. Counts only — no MACs/SSIDs/coordinates.
 
-## Known hardware unknowns (resolve from flash reports, then update this list)
+## Hardware status (from flash reports — update as results come in)
 
-- **Touch axis mapping/calibration**: `TOUCH_*` in `config.h` are guesses (swap XY, no
-  inversion, X 185–3700, Y 250–3800). The vendor's TFT_eSPI calibration is
-  `{225, 3413, 403, 3334, 1}`.
-- **Display colour order and inversion**: we use Arduino_GFX's default ST7789 init with
-  `ips=false`. Red/blue swapped => RGB/BGR order; dark/negative colours => inversion
-  (Settings -> Invert colors toggles it at runtime).
-- **Display rotation**: `DISPLAY_ROTATION 3` matches the vendor/Bruce config; unverified with Arduino_GFX.
-- **SPI speed**: display at 40 MHz (`DISPLAY_SPI_HZ`), SD at 20 MHz, touch at 2.5 MHz.
-  Drop the display to 20 MHz if there are glitches.
-- **Which USB-C port carries serial logs**: we log to the C5's native USB (USB-Serial-JTAG,
-  `ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`). The other port is a CH340 on
-  UART0 (GPIO 11/12). Which physical port is which is unconfirmed.
-- **I2C pin order**: schematic says SDA 9 / SCL 8, vendor config says the reverse.
-  Bring-up mode reports which one finds the AHT20.
-- **PSRAM**: expected 8 MB, and the screen framebuffer should land in PSRAM.
-- **5 GHz scanning**: `WiFi.setBandMode(WIFI_BAND_MODE_AUTO)` compiles in; not yet seen working.
-- **BOOT button at power-on**: assumed to enter download mode (Espressif strapping);
-  confirm on the board.
+Confirmed working on the owner's board (v0.1 bring-up + main app):
+display, colour order, rotation, RGB LED, PSRAM (8 MB, framebuffer in PSRAM), microSD, touch
+(both axes inverted, `TOUCH_INVERT_X/Y 1`), Wi-Fi on 2.4 and 5 GHz, BLE scanning, on-screen tabs.
+BOOT held during power-on/flashing = download mode (confirmed), hence the 1.5 s window.
 
-## Roadmap (don't start until the owner confirms hardware works)
+Not fitted / not present: **AHT20 (U28) is not populated** on the owner's board (schematic only);
+the environment stat was dropped. GPS and speaker not connected yet.
 
-AHT20 environment stat -> 802.15.4 (Zigbee/Thread) passive scanner -> battery support
-(LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C) ->
-account pairing and summary sync.
+v0.2 on hardware: boots, runs, all radios scanning (owner report). GUI "a tiny bit laggy" →
+v0.2.1 adds Turbo display + changed-areas-only flush; awaiting the `ui:` serial timing line.
+
+Untested on hardware: goblin beacon + encounters. Test with one board and a phone: nRF Connect →
+Advertiser → Manufacturer Data, company ID `0xFFFF`, data `4E470178563412 0C00C8004D6F636B`
+(a level-12 goblin called "Mock").
+
+Still unknown:
+- **Touch min/max calibration** (`TOUCH_RAW_*`): unverified; vendor TFT_eSPI calibration is `{225, 3413, 403, 3334, 1}`.
+- **SPI speed**: on the C5 the Arduino core clocks SPI from the crystal (40 or 48 MHz, logged at boot), so
+  that is the ceiling; "40 MHz" may really be 24 MHz on a 48 MHz crystal. Turbo display asks for the max.
+  Going past the crystal would need the PLL clock source and per-device divider fixes (SD, touch), or
+  IDF spi_master/esp_lcd with DMA for the whole shared bus. Neither done yet.
+- **Which USB-C port carries serial logs**: native USB (USB-Serial-JTAG) vs CH340 on UART0 (GPIO 11/12).
+
+## Roadmap
+
+Done in v0.2 (awaiting hardware test): 802.15.4 scanner, goblin encounters, GUI overhaul, 110 achievements.
+Next: battery support (LiPo -> charger/boost -> 5 V on P5 pin 1, MAX17048-style fuel gauge on I2C)
+-> account pairing and summary sync.

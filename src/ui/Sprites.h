@@ -1,17 +1,9 @@
 #pragma once
 #include <Arduino.h>
 #include <vector>
+#include "Companion.h"
 
-enum class CState : uint8_t {
-  Idle, Scanning, Searching, Discovered, Excited, LevelUp, Achievement,
-  Uploading, Sleeping, LowBattery, Offline, SyncDone, COUNT
-};
 const char* cstateKey(CState s);
-
-struct Frame {
-  uint16_t* px = nullptr;  // RGB565, PSRAM
-  uint16_t w = 0, h = 0;
-};
 
 // A sprite pack from /sprites/<name>/metadata.json + BMP frames (16-bit 565 or 24-bit).
 class SpritePack {

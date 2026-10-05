@@ -7,7 +7,8 @@
 // written to the user's progress files, and only counts are shown (no MACs/SSIDs).
 namespace diag {
 // Waits up to windowMs for the BOOT button. True if it was pressed (or already held).
-bool requested(uint32_t windowMs);
+// `tick` (optional) is called while waiting, e.g. to animate the splash screen.
+bool requested(uint32_t windowMs, void (*tick)() = nullptr);
 // Runs the diagnostics screen until reset. Never returns.
 [[noreturn]] void run(Scanner* const* scanners, size_t count);
 }  // namespace diag
