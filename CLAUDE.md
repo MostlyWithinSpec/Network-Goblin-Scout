@@ -216,4 +216,9 @@ leaderboard: Wi-Fi picker, password keyboard, HTTPS + HMAC upload, server, pages
 v0.5.1 (confirmed on hardware, on the web flasher): "remove me" on the Sync screen (two taps) -> signed POST
 `/api/v1/forget` deletes the goblin's row; the device then re-claims on its next Sync. Accounts: owner
 chose not to have them (no personal data on the server, no support load).
+Server anti-abuse (network-goblin-labs api/): signed uploads + seq (no impersonation/replay), 1 sync/min per
+goblin, new goblins capped at 5/IP/day and 500/day (IP stored only as a daily salted hash), first sync over
+200k XP and other implausible numbers shadow-hide the goblin, rude names masked as "Goblin xxxx". Owner is on
+Cloudflare's Free plan: over-limit requests fail, nothing is billed. Unhide a wrongly hidden goblin in the D1
+console: `UPDATE goblins SET hidden = 0, hidden_why = NULL WHERE key = '...'`.
 Next: encounter cross-checks (docs/sync-plan.md).
