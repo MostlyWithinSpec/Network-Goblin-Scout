@@ -39,6 +39,8 @@ bool Engine::begin() {
   loadState();
   size_t w = wifi_.load(), s = ssids_.load(), b = ble_.load(), c = cells_.load();
   size_t t = t154_.load(), p = pans_.load(), g = peers_.load();
+  trackers_.load();
+  trackersOk_.load();
   log_i("engine: loaded %u wifi, %u ssid, %u ble, %u cells, %u 802.15.4, %u pans, %u goblins", w, s, b, c, t,
         p, g);
   // Counters are derived from the stores so the SD log is the source of truth.
@@ -114,6 +116,20 @@ void Engine::processWifi(const Sighting& s) {
 
   uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
   blip(bssidId, s.rssi, Radio::WiFi);
+  // keep the strongest few of this scan: they fingerprint "where we are" for the tracker alert
+  {
+    size_t i = scanTopN_ < trackers::PlaceTracker::kFp ? scanTopN_++ : trackers::PlaceTracker::kFp;
+    if (i == trackers::PlaceTracker::kFp) {  // full: replace the weakest if this one is stronger
+      size_t w = 0;
+      for (size_t k = 1; k < trackers::PlaceTracker::kFp; k++)
+        if (scanTopRssi_[k] < scanTopRssi_[w]) w = k;
+      if (s.rssi > scanTopRssi_[w]) i = w;
+    }
+    if (i < trackers::PlaceTracker::kFp) {
+      scanTop_[i] = bssidId;
+      scanTopRssi_[i] = s.rssi;
+    }
+  }
   char extra[96];
   uint32_t now = gps::unixTime();
   if (gps::hasFix())
@@ -147,6 +163,7 @@ void Engine::processBle(const Sighting& s) {
   stats_.bleSightings++;
   uint64_t anyId = id(Radio::BLE, s.mac, 6);
   blip(anyId, s.rssi, Radio::BLE);
+  if (s.tracker) watchTracker(anyId, s);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
   if (!s.stableAddr) return;
@@ -244,6 +261,36 @@ void Engine::processPeer(const Sighting& s) {
   checkAchievements();
 }
 
+void Engine::watchTracker(uint64_t tid, const Sighting& s) {
+  char extra[24];
+  snprintf(extra, sizeof(extra), "%s,%lu", trackers::kindName(s.tracker), (unsigned long)gps::unixTime());
+  if (trackers_.add(tid, extra)) {
+    stats_.trackersSeen++;
+    trackers_.flush();
+  }
+  if (trackersOk_.has(tid)) return;
+  uint32_t now = millis();
+  const trackers::Follower* f = watch_.see(tid, s.tracker, s.rssi, places_.place(), now ? now : 1);
+  if (!f) return;
+  stats_.trackerAlerts++;
+  lastAlertId_ = f->id;
+  uint32_t mins = (f->lastMs - f->firstMs) / 60000;
+  // value: kind | places << 8 | minutes << 16 (the UI unpacks it)
+  push(EventType::TrackerAlert, f->kind | (uint32_t)f->places << 8 | (mins > 0xFFFF ? 0xFFFF : mins) << 16,
+       "Tracker following you!");
+  log_w("tracker: a %s has followed us through %u places for %lu min", trackers::kindName(f->kind), f->places,
+        (unsigned long)mins);
+  checkAchievements();
+}
+
+void Engine::trackerIsMine() {
+  if (!lastAlertId_) return;
+  trackersOk_.add(lastAlertId_, "mine");
+  trackersOk_.flush();
+  watch_.forget(lastAlertId_);
+  lastAlertId_ = 0;
+}
+
 size_t Engine::nearbyPeers(uint32_t withinMs, const NearbyPeer** out, size_t max) const {
   uint32_t now = millis();
   size_t n = 0;
@@ -256,6 +303,8 @@ void Engine::endScan(Radio radio, uint32_t seenThisScan) {
   stats_.scans++;
   char t[40];
   if (radio == Radio::WiFi) {
+    places_.wifiScan(scanTop_, scanTopN_);
+    scanTopN_ = 0;
     stats_.lastScanSeen = seenThisScan;
     if (seenThisScan > stats_.maxApsInScan) stats_.maxApsInScan = seenThisScan;
     if (batchWifiNew) {
@@ -320,7 +369,9 @@ void Engine::updateLocation() {
     uint8_t key[8];
     memcpy(key, &cy, 4);
     memcpy(key + 4, &cx, 4);
-    if (cells_.add(id(Radio::Thread /* historical tag, keep */, key, 8) ^ 0x43454C4C00000000ULL, "")) {
+    uint64_t cell = id(Radio::Thread /* historical tag, keep */, key, 8) ^ 0x43454C4C00000000ULL;
+    places_.gpsCell(cell);
+    if (cells_.add(cell, "")) {
       stats_.geoCells++;
       if (stats_.geoCells > 1) {
         addXp(XP_NEW_CELL, true);

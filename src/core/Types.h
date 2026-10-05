@@ -38,6 +38,7 @@ struct Sighting {
   uint16_t panId;     // 802.15.4 PAN id (0xFFFF = none)
   uint16_t peerLevel; // Peer only
   uint8_t peerHue;    // Peer only: colour of their goblin
+  uint8_t tracker;    // BLE only: trackers::Kind if it looks like an item tracker (0 = no)
 };
 
 // Lifetime counters saved in state.json under their own names. Add new ones at will;
@@ -52,7 +53,7 @@ struct Sighting {
   X(peerEncounters) X(maxPeersAtOnce) X(metHigherLevel) X(closeEncounter)                 \
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
-  X(batteryMin)
+  X(batteryMin) X(trackersSeen) X(trackerAlerts)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -102,7 +103,7 @@ struct Settings {
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert
 };
 
 struct UiEvent {

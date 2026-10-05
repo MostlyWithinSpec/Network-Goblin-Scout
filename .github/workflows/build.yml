@@ -79,6 +79,14 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_ieee802154.cpp -o t154 && ./t154
           g++ -std=c++17 -Wall -Wextra -Werror -I src test/test_peer.cpp -o tpeer && ./tpeer
           g++ -std=c++17 -Wall -Wextra -Werror -I tools/preview/shim -I src test/test_quests.cpp src/core/Quests.cpp src/core/Hats.cpp -o tq && ./tq
+          g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -I src test/test_trackers.cpp src/core/Trackers.cpp -o ttrk && ./ttrk
+
+      # The same UI code with AddressSanitizer: a buffer overflow that the PC shrugs off can
+      # reset the board (v0.3.1 boot loop), so any memory error here fails the build.
+      - name: UI preview under the memory checker
+        run: |
+          pip install pillow
+          PREVIEW_FLAGS="-g -fsanitize=address,undefined -fno-sanitize=shift -fno-sanitize-recover=all" sh tools/preview/run.sh
 
       - name: Render UI preview
         run: |

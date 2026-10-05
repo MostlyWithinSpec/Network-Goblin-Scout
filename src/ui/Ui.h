@@ -8,7 +8,7 @@
 namespace ui {
 
 enum Sfx : uint8_t {
-  kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet, kSfxBabble, kSfxQuest
+  kSfxTap, kSfxDiscover, kSfxChannel, kSfxLevelUp, kSfxAchievement, kSfxEncounter, kSfxPet, kSfxBabble, kSfxQuest, kSfxAlert
 };
 
 struct Hooks {
@@ -27,6 +27,7 @@ struct Hooks {
   uint32_t (*micros)() = nullptr;        // optional: enables profile()
   void (*agreed)() = nullptr;            // first-run disclaimer accepted
   void (*named)(const char* name) = nullptr;  // goblin (re)named
+  void (*trackerMine)() = nullptr;       // "it's mine" on a tracker alert
 };
 
 // Time spent in each part of the last render(), in microseconds (needs Hooks::micros).

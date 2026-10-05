@@ -1,5 +1,6 @@
 #pragma once
 #include "SeenStore.h"
+#include "Trackers.h"
 #include "Types.h"
 
 // The discovery -> XP -> achievement pipeline. Every scanner module feeds process();
@@ -14,6 +15,8 @@ class Engine {
   void saveNow();
   void pet();                                        // the user tapped the goblin
   void setOnBattery(bool b) { onBattery_ = b; }      // counts battery minutes
+  void trackerIsMine();                              // last tracker alert was the owner's own
+  size_t trackersNearby() const { return watch_.nearby(millis()); }
 
   Stats& stats() { return stats_; }
   Settings& settings() { return settings_; }
@@ -55,6 +58,15 @@ class Engine {
   SeenStore t154_{"/scout/154.csv"};
   SeenStore pans_{"/scout/pans.txt"};
   SeenStore peers_{"/scout/peers.txt"};
+  SeenStore trackers_{"/scout/trackers.txt"};  // unique tracker addresses (salted), for the counter
+  SeenStore trackersOk_{"/scout/trackers_ok.txt"};  // "it's mine": never alert for these
+
+  trackers::PlaceTracker places_;
+  trackers::Watch watch_;
+  uint64_t lastAlertId_ = 0;
+  uint64_t scanTop_[trackers::PlaceTracker::kFp] = {};  // strongest networks in this Wi-Fi scan
+  int8_t scanTopRssi_[trackers::PlaceTracker::kFp] = {};
+  size_t scanTopN_ = 0;
 
   static const size_t kNearby = 6;
   NearbyPeer nearby_[kNearby];
@@ -76,6 +88,7 @@ class Engine {
   void processBle(const Sighting& s);
   void process154(const Sighting& s);
   void processPeer(const Sighting& s);
+  void watchTracker(uint64_t id, const Sighting& s);
 };
 
 extern Engine engine;

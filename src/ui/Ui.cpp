@@ -6,6 +6,7 @@
 #include "../core/Achievements.h"
 #include "../core/Hats.h"
 #include "../core/Quests.h"
+#include "../core/Trackers.h"
 #include "../social/PeerCodec.h"
 #include "HatArt.h"
 #include "Theme.h"
@@ -74,7 +75,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -770,9 +771,10 @@ void drawRadar(gfx::Surface& s, const UiModel& m) {
     s.textRight(fBody(), W - 10, ry - 1, n, kText);
   }
   char b[24];
-  if (best > -127) snprintf(b, sizeof(b), "loudest %d dBm", best);
+  if (m.trackersNearby) snprintf(b, sizeof(b), "trackers near: %u", m.trackersNearby);
+  else if (best > -127) snprintf(b, sizeof(b), "loudest %d dBm", best);
   else snprintf(b, sizeof(b), "listening...");
-  s.text(fSmall(), x, y + 132, b, kDim);
+  s.text(fSmall(), x, y + 132, b, m.trackersNearby ? kAmber : kDim);
   if (m.scanning) {
     snprintf(b, sizeof(b), "now: %s", m.scanning);
     s.text(fSmall(), x, y + 148, b, radioColor(m.scanning));
@@ -968,6 +970,7 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
 }
 
 uint32_t overlayLength(OvType t) {
+  if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1003,6 +1006,10 @@ void startOverlay(uint32_t now) {
       sfx(kSfxEncounter);
       led(60, 0, 50, 2000);
       companion.react(CState::Excited, 5000, now);
+      break;
+    case OvType::Tracker:
+      sfx(kSfxAlert);
+      led(80, 0, 0, 3000);
       break;
   }
 }
@@ -1141,6 +1148,40 @@ void drawAchBatch(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
   s.textCentered(fSmall(), W / 2, 202, "see them all in LOOT", kDim, a8(255 * in));
 }
 
+// Tracker alert buttons
+const int16_t kTrkBtnY = 198, kTrkBtnH = 32;
+bool inMineBtn(int16_t x, int16_t y) { return y >= kTrkBtnY - 4 && x < W / 2 - 4; }
+bool inOkBtn(int16_t x, int16_t y) { return y >= kTrkBtnY - 4 && x > W / 2 + 4; }
+
+void drawTracker(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t kind = o.value & 0xFF, places = (o.value >> 8) & 0xFF;
+  uint32_t mins = o.value >> 16;
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, gfx::hex(0x1A0606), a8(250 * in));
+  // pulsing alarm rings around a tag
+  for (int i = 0; i < 3; i++) {
+    float ph = fmodf(now / 1400.0f + i / 3.0f, 1.0f);
+    s.ring(W / 2, 72, 14 + ph * 46, 2, kRed, a8(150 * (1 - ph) * in));
+  }
+  s.glow(W / 2, 72, 34, kRed, a8(90 * in));
+  s.fillRoundRect(W / 2 - 13, 58, 26, 28, 9, kText, a8(255 * in));
+  s.ring(W / 2, 66, 3.5f, 2, kBgBottom, a8(255 * in));
+  s.fillCircle(W / 2, 77, 3, kRed, a8(255 * in));
+  bool flash = (now / 400) % 2;
+  s.textCentered(fTitle(), W / 2, 10, "SOMETHING IS FOLLOWING YOU", flash ? kRed : kAmber, a8(255 * in));
+  s.textCentered(fBody(), W / 2, 104, trackers::kindName(kind), kText, a8(255 * in));
+  char b[64];
+  snprintf(b, sizeof(b), "with you for %lu min, through %u places", (unsigned long)mins, places);
+  s.textCentered(fSmall(), W / 2, 128, b, kAmber, a8(255 * in));
+  s.textCentered(fSmall(), W / 2, 148, "Not yours? Check your bag, pockets and car.", kDim, a8(255 * in));
+  s.textCentered(fSmall(), W / 2, 164, "Your phone can find it and play its sound.", kDim, a8(255 * in));
+  s.fillRoundRect(12, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kPanel, a8(240 * in));
+  s.roundRect(12, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kDim, a8(255 * in));
+  s.textCentered(fBody(), W / 4 + 2, kTrkBtnY + 5, "IT'S MINE", kText, a8(255 * in));
+  s.fillRoundRect(W / 2 + 8, kTrkBtnY, W / 2 - 20, kTrkBtnH, 14, kAmber, a8(255 * in));
+  s.textCentered(fBody(), W * 3 / 4 - 2, kTrkBtnY + 5, "GOT IT", kBgBottom, a8(255 * in));
+}
+
 void drawOverlay(gfx::Surface& s, const UiModel& m) {
   if (!overlayCount) return;
   if (!overlayStarted) startOverlay(m.now);
@@ -1158,6 +1199,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::Encounter: drawEncounter(s, o, t, m.now, m); break;
     case OvType::Hat: drawHatOverlay(s, o, t, m.now); break;
     case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
+    case OvType::Tracker: drawTracker(s, o, t, m.now); break;
   }
 }
 
@@ -1374,8 +1416,15 @@ void toggleSetting(int row, const UiModel& m) {
 
 void onTap(int16_t x, int16_t y, const UiModel& m) {
   uint32_t now = m.now;
-  if (overlayCount && screen != Screen::Disclaimer && screen != Screen::Naming) {  // tap skips the celebration
-    overlayStart = now - overlayLength(overlays[0].type) + 200;
+  if (overlayCount && screen != Screen::Disclaimer && screen != Screen::Naming) {
+    if (overlays[0].type == OvType::Tracker) {  // needs an answer, not a skip
+      bool mine = inMineBtn(x, y);
+      if (!mine && !inOkBtn(x, y)) return;
+      sfx(kSfxTap);
+      if (mine && hooks.trackerMine) hooks.trackerMine();
+      if (mine) say("Phew, it's ours.", now + 400, 3000);
+    }
+    overlayStart = now - overlayLength(overlays[0].type) + 200;  // tap skips the celebration
     return;
   }
   sfx(kSfxTap);
@@ -1625,6 +1674,20 @@ void onEvent(const UiEvent& e, uint32_t now) {
       banner(Glyph::Trophy, kCyan);
       break;
     case EventType::HatUnlocked: overlay(OvType::Hat); break;
+    case EventType::TrackerAlert:
+      // Jumps the queue: safety first, celebrations can wait.
+      if (overlayCount == 6) overlayCount--;
+      overlay(OvType::Tracker);
+      if (overlayCount > 1 && !overlayStarted) {
+        Overlay tmp = overlays[overlayCount - 1];
+        for (int i = overlayCount - 1; i > 0; i--) overlays[i] = overlays[i - 1];
+        overlays[0] = tmp;
+      } else if (overlayCount > 2) {  // one is on screen: go right after it
+        Overlay tmp = overlays[overlayCount - 1];
+        for (int i = overlayCount - 1; i > 1; i--) overlays[i] = overlays[i - 1];
+        overlays[1] = tmp;
+      }
+      break;
     case EventType::PeerNew:
     case EventType::PeerReunion:
       overlay(OvType::Encounter);

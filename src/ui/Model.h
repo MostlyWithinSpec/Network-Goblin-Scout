@@ -27,6 +27,7 @@ struct UiModel {
   uint32_t myId = 0;
   const NearbyPeer* nearby[6] = {};
   uint8_t nearbyCount = 0;
+  uint8_t trackersNearby = 0;        // item trackers heard in the last 2 minutes
 
   // optional SD sprite pack frame for the current pet state (null = built-in goblin)
   const Frame* (*packFrame)(CState s, uint32_t tick) = nullptr;

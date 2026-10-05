@@ -6,6 +6,7 @@
 #include "core/Achievements.h"
 #include "core/Hats.h"
 #include "core/Quests.h"
+#include "core/Trackers.h"
 #include "ui/Ui.h"
 
 static uint16_t fb[320 * 240], bg[320 * 240];
@@ -192,6 +193,16 @@ int main() {
   ui::pet().setBase(CState::Sleeping);
   run(2000);
   save("20_home_sleeping");
+  ui::pet().setBase(CState::Idle);
+
+  // tracker alert: an AirTag that came along through 4 places over 23 minutes
+  ui::onEvent(ev(EventType::TrackerAlert, trackers::kFindMy | 4u << 8 | 23u << 16, "Tracker following you!"), now);
+  run(900); save("21_tracker_alert");
+  tap(240, 214);  // GOT IT
+  run(400);
+  model.trackersNearby = 2;
+  ui::debugShow(1, 0); run(600); save("22_radar_trackers");
+  model.trackersNearby = 0;
   printf("rendered\n");
   return 0;
 }

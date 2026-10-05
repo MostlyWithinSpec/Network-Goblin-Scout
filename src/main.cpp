@@ -66,6 +66,7 @@ const fx::Note kAchieve[] = {{1568, 80}, {2093, 80}, {2637, 200}};
 const fx::Note kEncounter[] = {{1319, 70}, {1760, 70}, {0, 40}, {1319, 70}, {1760, 70}, {2637, 280}};
 const fx::Note kPet[] = {{2800, 25}, {3400, 40}};
 const fx::Note kQuest[] = {{1760, 60}, {2349, 60}, {2960, 160}};
+const fx::Note kAlert[] = {{2600, 120}, {0, 60}, {2600, 120}, {0, 60}, {2600, 120}, {1800, 300}};
 
 void onSfx(ui::Sfx s) {
   switch (s) {
@@ -77,6 +78,7 @@ void onSfx(ui::Sfx s) {
     case ui::kSfxEncounter: fx::play(kEncounter, 6); break;
     case ui::kSfxPet: fx::play(kPet, 2); break;
     case ui::kSfxQuest: fx::play(kQuest, 3); break;
+    case ui::kSfxAlert: fx::play(kAlert, 6); break;
     case ui::kSfxBabble: {  // goblin "talking": a few random chirps, Animal Crossing style
       fx::Note n[5];
       for (auto& note : n) note = {(uint16_t)(1400 + esp_random() % 1400), (uint16_t)(35 + esp_random() % 25)};
@@ -132,6 +134,7 @@ ui::Hooks makeHooks() {
     engine.settings().goblinName = peer::self().name;
     engine.settingsChanged();
   };
+  h.trackerMine = [] { engine.trackerIsMine(); };
   h.sfx = onSfx;
   h.led = fx::led;
   h.micros = [] { return (uint32_t)::micros(); };
@@ -160,6 +163,8 @@ void fillModel(uint32_t now) {
   model.myHue = peer::self().hue;
   model.myId = peer::self().id;
   model.nearbyCount = (uint8_t)engine.nearbyPeers(PEER_TOGETHER_MS, model.nearby, 6);
+  size_t trk = engine.trackersNearby();
+  model.trackersNearby = (uint8_t)(trk > 255 ? 255 : trk);
   model.packFrame = pack.loaded() ? packFrame : nullptr;
   model.packName = pack.loaded() ? engine.settings().spritePack.c_str() : "built-in";
   touch::lastRaw(model.rawX, model.rawY, model.rawZ);
@@ -180,6 +185,7 @@ void handleEvents(uint32_t now) {
     log_i("event: %s", e.text);
     ui::onEvent(e, now);
     if (e.type == EventType::LevelUp) peer::update((uint16_t)e.value);
+    if (e.type == EventType::TrackerAlert && display::asleep()) display::sleep(false);  // wake for safety alerts
   }
 }
 
