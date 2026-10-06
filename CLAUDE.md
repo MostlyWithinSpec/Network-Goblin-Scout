@@ -267,12 +267,12 @@ into network-goblin-labs scout/flash/firmware/<version>/ via GitHub's web upload
 (version string, factory = same app at 0x10000) and point manifest.json / manifest-update.json / index.html at it.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
 whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
-v0.6.3 (compiles; untested on hardware): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
+v0.6.3 (confirmed on hardware with v0.6.4): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
 none / Pip / Lily / both, saved as settings "pet". ui/PetArt draws a cat from a coat recipe (CatCoat):
 Pip = the owner's torico (black, white bib + paws, ginger half-face), Lily = the owner's tiny tortie
 (brindled, ginger blaze, kitten). Poses follow the goblin's mood (sit / alert while scanning / hop on finds /
 curled asleep, both cuddle), hearts when the goblin is petted. ~1.4 M instr/frame for both on Home.
-v0.6.4 (compiles; untested on hardware): Setup reordered (Ui.cpp kOrder: goblin name, Sync, Pet, Share
+v0.6.4 (confirmed on hardware, on the web flasher): Setup reordered (Ui.cpp kOrder: goblin name, Sync, Pet, Share
 card, radios, display, touch test); row ids unchanged, so code switches on ids. Switch rows only flip when
 the switch side (x > W-110) is tapped: the owner found Mesh scan off without meaning to.
 Next for pets: user-added cats from a coat recipe on SD (/pets/*.json), maybe picture packs for non-cats.
