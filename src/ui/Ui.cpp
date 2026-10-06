@@ -79,7 +79,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot, Hacker };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -759,14 +759,14 @@ void drawHoardBook(gfx::Surface& s, const UiModel& m) {
   uint32_t finds[loot::K_COUNT] = {};
   for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++) finds[loot::kBrands[i].kind] += st.lootBrand[i];
   for (int k = 0; k < loot::K_COUNT; k++) {
-    int16_t x = 8 + (k % 2) * 154, y = kBodyY + 57 + (k / 2) * 12;
+    int16_t x = 6 + (k % 3) * 104, y = kBodyY + 57 + (k / 3) * 12;
     bool got = finds[k] > 0;
     uint16_t c = rarityColor(loot::kindRarity((uint8_t)k), m.now);
     s.fillRect(x, y + 2, 3, 9, c, got ? 255 : 70);
     s.text(fSmall(), x + 7, y - 1, got ? loot::kindName((uint8_t)k) : "???", got ? kText : kFaint);
     if (got) {
       snprintf(b, sizeof(b), "%lu", (unsigned long)finds[k]);
-      s.textRight(fSmall(), x + 146, y - 1, b, kDim);
+      s.textRight(fSmall(), x + 100, y - 1, b, kDim);
     }
   }
 }
@@ -1164,6 +1164,7 @@ uint32_t overlayLength(OvType t) {
   if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
   if (t == OvType::Sniff) return 5000;
   if (t == OvType::Loot) return 3400;
+  if (t == OvType::Hacker) return 5200;
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1216,12 +1217,141 @@ void startOverlay(uint32_t now) {
       companion.react(CState::Excited, 2500, now);
       break;
     }
+    case OvType::Hacker:
+      emit(PKind::Spark, W / 2, 96, 26, kGreen, 140, 1.4f);
+      sfx(kSfxEncounter);
+      led(0, 60, 10, 1500);
+      companion.react(CState::Excited, 5000, now);
+      break;
   }
+}
+
+// ---- Hacker gear scenes (loot::Hacker) --------------------------------------------------------
+void drawDolphin(gfx::Surface& s, float x, float y, float k, uint16_t c, uint8_t a) {  // Flipper's mascot
+  static const float body[][3] = {{-26, 6, 7}, {-18, 2, 10}, {-6, -1, 12}, {6, 0, 11}, {16, 3, 8}, {24, 7, 5}};
+  for (const auto& b : body) s.fillCircle(x + b[0] * k, y + b[1] * k, b[2] * k, c, a);
+  s.fillCircle(x - 33 * k, y + 9 * k, 4 * k, c, a);                                       // snout
+  s.fillTriangle((int16_t)(x - 4 * k), (int16_t)(y - 10 * k), (int16_t)(x + 8 * k), (int16_t)(y - 10 * k),
+                 (int16_t)(x + 6 * k), (int16_t)(y - 24 * k), c, a);                      // dorsal fin
+  s.fillTriangle((int16_t)(x + 26 * k), (int16_t)(y + 8 * k), (int16_t)(x + 40 * k), (int16_t)(y - 4 * k),
+                 (int16_t)(x + 36 * k), (int16_t)(y + 10 * k), c, a);                     // tail
+  s.fillTriangle((int16_t)(x + 26 * k), (int16_t)(y + 8 * k), (int16_t)(x + 40 * k), (int16_t)(y + 20 * k),
+                 (int16_t)(x + 36 * k), (int16_t)(y + 10 * k), c, a);
+  s.fillCircle(x - 22 * k, y + 1 * k, 1.8f * k, kBgBottom, a);                            // eye
+}
+
+void drawPineapple(gfx::Surface& s, float x, float y, uint32_t now, uint8_t a) {
+  uint16_t gold = hex(0xF2B630), leaf = hex(0x3FAE4A);
+  for (int i = 0; i < 3; i++)
+    s.fillTriangle((int16_t)x, (int16_t)(y - 18), (int16_t)(x - 14 + i * 14), (int16_t)(y - 44 + (i == 1 ? -6 : 0)),
+                   (int16_t)(x - 4 + i * 4), (int16_t)(y - 20), leaf, a);
+  for (int i = -2; i <= 2; i++) s.fillCircle(x, y + i * 6, 17 - (i < 0 ? -i : i) * 1.5f, gold, a);
+  for (int i = -3; i <= 3; i++) {  // the criss-cross
+    s.line((int16_t)(x - 14), (int16_t)(y + i * 6 - 8), (int16_t)(x + 14), (int16_t)(y + i * 6 + 8), hex(0xB8801A), a);
+    s.line((int16_t)(x + 14), (int16_t)(y + i * 6 - 8), (int16_t)(x - 14), (int16_t)(y + i * 6 + 8), hex(0xB8801A), a);
+  }
+  for (int i = 0; i < 3; i++) {  // it's a Wi-Fi Pineapple: antennas
+    int16_t ax = (int16_t)(x - 22 + i * 22);
+    s.line(ax, (int16_t)(y - 14), (int16_t)(ax + (i - 1) * 6), (int16_t)(y - 40), hex(0x2B2F33), a);
+    bool on = ((now / 250 + i) % 3) == 0;
+    s.fillCircle(ax + (i - 1) * 6, y - 41, 2.5f, on ? kRed : hex(0x55606A), a);
+  }
+}
+
+void drawHackerOverlay(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t h = (uint8_t)(o.value & 0xFF);
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  float in = easeOut(t / 300.0f);
+  uint8_t A = a8(255 * in);
+  s.fillRect(0, 0, W, H, 0x0000, a8(230 * in));
+  uint16_t c = h == loot::H_FLIPPER ? hex(0xFF8200) : h == loot::H_PINEAPPLE ? hex(0xF2B630) : kGreen;
+  rays(s, W / 2, 104, c, a8(18 * in), now / 3500.0f);
+  const char* title = "HACKER GEAR!";
+  const char* line1 = "";
+  const char* line2 = "";
+  float pop = clampf(easeBack((t - 150) / 500.0f), 0, 1.2f);
+  switch (h) {
+    case loot::H_FLIPPER: {
+      title = "A WILD DOLPHIN!";
+      line1 = "A Flipper Zero is nearby.";
+      line2 = "The goblin is not impressed. Much.";
+      for (int i = 0; i < 3; i++)  // waves
+        s.ring(W / 2 - 80 + i * 80 + (int16_t)((now / 30) % 80) - 40, 150, 30, 3, kBlue, a8(120 * in), 300, 120);
+      float jump = sinf(clampf(t / 1800.0f, 0, 1) * kPi * 2) * 30;  // one leap, then a bob
+      if (pop > 0.05f) drawDolphin(s, W / 2, 112 - jump, pop, c, A);
+      break;
+    }
+    case loot::H_PWNAGOTCHI: {
+      title = "A PWNAGOTCHI!";
+      line1 = "It eats Wi-Fi handshakes.";
+      line2 = "Your goblin just counts. Nobody's hungry.";
+      static const char* const kFaces[] = {"(O_O)", "(o_o)", "(-_-)", "(x_x)", "(0_0)"};  // the big font has no ^
+      if (pop > 0.05f) {
+        int16_t bw = (int16_t)(130 * pop), bh = (int16_t)(66 * pop);
+        s.fillRoundRect(W / 2 - bw / 2, 104 - bh / 2, bw, bh, 6, hex(0xE9E7DF), A);  // e-ink screen
+        s.roundRect(W / 2 - bw / 2, 104 - bh / 2, bw, bh, 6, hex(0x2B2F33), A);
+        if (pop > 0.9f) s.textCentered(fBig(), W / 2, 88, kFaces[(now / 700) % 5], hex(0x1A1C1E), A);
+      }
+      break;
+    }
+    case loot::H_PINEAPPLE:
+      title = "FRUIT SALAD!";
+      line1 = "A Wi-Fi Pineapple is out and about.";
+      line2 = "Don't join networks you don't know.";
+      if (pop > 0.05f) drawPineapple(s, W / 2, 118, now, A);
+      break;
+    case loot::H_DEAUTHER: {
+      title = "SCRIPT KIDDIE!";
+      line1 = "An ESP deauther's \"pwned\" network.";
+      line2 = "Somebody's kicking people off Wi-Fi.";
+      if (pop > 0.05f) {
+        s.fillRoundRect(W / 2 - 46, 80, 92, 48, 4, hex(0x1F6B3A), A);  // a little dev board
+        s.fillRect(W / 2 - 14, 92, 28, 24, hex(0x2B2F33), A);
+        for (int i = 0; i < 8; i++) s.fillRect(W / 2 - 42 + i * 11, 124, 5, 6, kGoldC, A);
+        bool on = (now / 120) % 2;
+        s.fillCircle(W / 2 + 34, 88, 3, on ? kRed : hex(0x55606A), A);
+        icon(s, Glyph::Wifi, W / 2, 62, 26, kRed, A);
+        s.line(W / 2 - 14, 50, W / 2 + 14, 74, kRed, A);
+      }
+      break;
+    }
+    default: {  // BLE spam
+      title = "POPUP STORM!";
+      line1 = "Someone's spamming Bluetooth popups.";
+      line2 = "Phones nearby: \"Connect AirPods?\" x100";
+      for (int i = 0; i < 9; i++) {
+        uint32_t seed = (uint32_t)i * 2654435761u;
+        float ft = ((t + (seed >> 20) % 1500) % 1500) / 1500.0f;
+        int16_t x = (int16_t)(20 + (seed >> 8) % 230), y = (int16_t)(40 + ft * 110);
+        uint8_t pa = a8(230 * in * (1 - ft));
+        s.fillRoundRect(x, y, 74, 24, 6, hex(0xF2F2F7), pa);
+        s.text(fSmall(), x + 5, y + 5, i % 3 == 0 ? "Connect?" : i % 3 == 1 ? "AirPods?" : "Pair now?", hex(0x1A1C1E), pa);
+      }
+      for (int i = 0; i < 4; i++) {  // the goblin is dizzy
+        float ang = now / 300.0f + i * kPi / 2;
+        icon(s, Glyph::Star, (int16_t)(W / 2 + cosf(ang) * 26), (int16_t)(110 + sinf(ang) * 10), 10, kGoldC, A);
+      }
+      break;
+    }
+  }
+  s.textCentered(fBig(), W / 2, 12, title, c, A);
+  s.textCentered(fSmall(), W / 2, 160, line1, kText, A);
+  s.textCentered(fSmall(), W / 2, 175, line2, kDim, A);
+  char b[24];
+  snprintf(b, sizeof(b), "+%lu XP", (unsigned long)xp);
+  s.textCentered(fBody(), W / 2, 196, b, kAmber, A);
+  Companion::Look look;  // the goblin puts its Black Hat on for the occasion
+  look.scale = 0.42f;
+  look.hat = 18;
+  look.aura = false;
+  look.alpha = A;
+  Companion::drawGoblin(s, 34, 230, now, CState::Excited, look);
 }
 
 void drawLootFind(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
   uint8_t r = (uint8_t)(o.value & 0xFF), kind = (uint8_t)((o.value >> 8) & 0xFF);
-  uint32_t xp = o.value >> 16;
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  bool ble = (o.value >> 24) & 1;
   uint16_t c = rarityColor(r, now);
   float in = easeOut(t / 300.0f);
   s.fillRect(0, 0, W, H, 0x0000, a8(225 * in));
@@ -1234,7 +1364,7 @@ void drawLootFind(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
     s.glow(W / 2, 100, 46 * k, c, a8(110 * clampf(pop, 0, 1)));
     s.fillCircle(W / 2, 100, 30 * k, kPanel, a8(240 * clampf(pop, 0, 1)));
     s.ring(W / 2, 100, 30 * k, 3, c, a8(255 * clampf(pop, 0, 1)));
-    icon(s, Glyph::Wifi, W / 2, 100, (int16_t)(32 * k), c, a8(255 * clampf(pop, 0, 1)));
+    icon(s, ble ? Glyph::Ble : Glyph::Wifi, W / 2, 100, (int16_t)(32 * k), c, a8(255 * clampf(pop, 0, 1)));
   }
   s.textCentered(fBig(), W / 2, 142, o.text, kText, a8(255 * in));
   char b[48];
@@ -1488,6 +1618,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::Tracker: drawTracker(s, o, t, m.now); break;
     case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
     case OvType::Loot: drawLootFind(s, o, t, m.now); break;
+    case OvType::Hacker: drawHackerOverlay(s, o, t, m.now); break;
   }
 }
 
@@ -2187,6 +2318,9 @@ void onEvent(const UiEvent& e, uint32_t now) {
       break;
     case EventType::LootFind:
       overlay(OvType::Loot);
+      break;
+    case EventType::Hacker:
+      overlay(OvType::Hacker);
       break;
     case EventType::TrackerAlert:
       // Jumps the queue: safety first, celebrations can wait.

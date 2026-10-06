@@ -44,15 +44,16 @@ press **Install** on the [web flasher](https://scout.networkgoblin.dev/flash/). 
 | 📡 **Dual-band Wi-Fi sniffing** | 2.4 *and* 5 GHz, passive beacon listening. Spots Wi-Fi 6, WPS, hidden networks, and the occasional WEP fossil. |
 | 🔵 **Bluetooth snooping** | Passive BLE scans. iBeacons, Eddystone, named gadgets. Phones with rotating addresses count as *sightings*, not trophies (no farming!). |
 | 🕸️ **Mesh eavesdropping** | The C5's third radio listens to 802.15.4: Zigbee bulbs, Thread sensors, Matter hubs. Your smart home is chattier than you think. |
-| 💎 **Loot rarity** | Every new network is loot. The goblin works out what it found from the router's maker code: *another Netgear? Common.* An office access point left wide open? **Legendary.** A Starlink dish, a Tesla, a card terminal, a game console... 154 brands in 18 kinds, five rarities from Common (1 XP) to Legendary (50 XP), and a **Hoard Book** to fill in. |
+| 💎 **Loot rarity** | Every new network or gadget is loot. The goblin works out what it found from the maker code: *another Netgear? Common.* An office access point left wide open? **Legendary.** A Starlink dish, a Tesla, AirPods, a Garmin, an Oura ring, a card terminal... 193 brands in 22 kinds, five rarities from Common (1 XP) to Legendary (50 XP), and a **Hoard Book** to fill in. Phones that keep changing their Bluetooth address only count the first time a brand turns up, so there's no farming. |
+| 🐬 **Hacker gear** | The goblin notices the hacker toys: a **Flipper Zero** (a wild dolphin appears!), a **Pwnagotchi**, a **Wi-Fi Pineapple**, an **ESP deauther** and **Bluetooth popup spam** storms. Each one gets its own scene, XP, a trophy, and the **Black Hat**. Strictly listening: whoever owns the gear never knows. |
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
 | 👃 **Sniff-offs** | Then they sniff each other's hoards. Bigger hoard wins (level breaks a tie) and *both* goblins get XP. Bragging rights not included, but strongly implied. |
 | 🏷️ **Tracker alert** | Actually useful: if an AirTag, Tile, SmartTag or Google tracker keeps tagging along with you through 3+ places for 15+ minutes, the goblin sounds the alarm. Your own? Tap **It's mine** and it never nags about that one again. |
-| 🏆 **133 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
+| 🏆 **142 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
 | ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks (and babbles, if you wire up a speaker). Mostly about packets. |
 | 🍖 **Needs** | It gets **hungry** (feed it new devices) and **bored** (show it new channels, places, networks and goblins). Keep both meters full and it earns **+25% XP**. Neglect it and it sulks. |
 | 📜 **Quests** | A board of three challenges at a time: *"Sniff out 20 new networks"*, *"Find a Wi-Fi 6 router"*... Clear the board for bonus XP, then a fresh one turns up. |
-| 🎩 **Hats** | 17 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones, plus seasonal ones (Witch Hat in October, Santa Hat in December...). Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
+| 🎩 **Hats** | 18 hats, from party hat to wizard hat to tinfoil hat, unlocked by milestones, plus seasonal ones (Witch Hat in October, Santa Hat in December...). Your hat travels in the goblin beacon, so other goblins see it when you meet. Fashion matters. |
 | 📡 **Radar** | A live sweep of everything heard in the last minute. Distance = signal strength, colour = radio, other goblins show up as little goblin heads. |
 | 🪪 **Share card** | Hold the goblin (or Setup → Share card) for a trading card with its name, level, hat, stats and a **QR code** (to your goblin's leaderboard page once you've synced). Made for photos. |
 | 🌙 **Day & night** | Dawn glow, dusk glow, a starry night sky, and a goblin that naps from 11 pm (it keeps sniffing in its sleep). Needs the time: GPS, or set the clock in Setup. |
@@ -185,8 +186,9 @@ The goblin is nosy, not creepy.
   (the salt is random per device). You can count your hoard but you can't read it back.
 - **GPS stays home.** Coordinates are written to the SD card and nowhere else: not the screen, not serial.
 - **Loot without logging.** To rate a find, the goblin looks at the router's maker code (the first half of its
-  address) and, for random addresses, a few name patterns ("DIRECT-", "iPhone"...), in memory at that moment.
-  Only the brand ("Netgear") and the counts are kept. The maker list comes from the IEEE registry.
+  address) and, for random addresses, a few name patterns ("DIRECT-", "iPhone"...), or at the company id in a
+  Bluetooth advert, in memory at that moment. Only the brand ("Netgear") and the counts are kept. The maker
+  lists come from the IEEE registry and the Bluetooth SIG.
 - **No farming.** BLE devices with rotating private addresses (most phones) are *sightings*, not unique devices.
 - **Tracker alert stays local.** Trackers are followed by salted id, in memory, to spot one that keeps
   following *you*. Nothing is sent anywhere. Works best with AirTags and other Find My tags, Tile and Google
@@ -279,7 +281,7 @@ sd_card/                 copy to the microSD card
 - [x] Dual-band Wi-Fi + BLE sniffing, persistent dedupe
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
-- [x] 133 achievements, levels, streaks, exploration
+- [x] 142 achievements, levels, streaks, exploration
 - [x] Hunger & boredom, quest boards, 17 hats (4 seasonal), radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
@@ -288,7 +290,8 @@ sd_card/                 copy to the microSD card
 - [x] Goblin Sync, [leaderboards](https://scout.networkgoblin.dev/leaderboard/) and goblin profiles, self-service removal
 - [x] [Web flasher](https://scout.networkgoblin.dev/flash/): install and update from the browser
 - [x] Encounter cross-checks: the "goblins met" board counts only meetings both goblins report
-- [x] Loot rarity: 154 brands, five rarities, a Hoard Book, and a Legendary finds board
+- [x] Loot rarity: 193 brands (Wi-Fi and Bluetooth), five rarities, a Hoard Book, and a Legendary finds board
+- [x] Hacker gear sightings: Flipper Zero, Pwnagotchi, Wi-Fi Pineapple, deauthers, Bluetooth popup spam
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits
@@ -298,7 +301,8 @@ sd_card/                 copy to the microSD card
   [Rajdhani](https://fonts.google.com/specimen/Rajdhani), SIL Open Font License (see `assets/fonts/`).
 - Board: [RockBase NM-CYD-C5](https://github.com/RockBase-iot/NM-CYD-C5).
 - Display library: [Arduino_GFX](https://github.com/moononournation/Arduino_GFX).
-- Maker codes: the [IEEE OUI registry](https://standards-oui.ieee.org/), via `tools/gen_oui.py`.
+- Maker codes: the [IEEE OUI registry](https://standards-oui.ieee.org/) and the Bluetooth SIG company list
+  (via the `bluetooth-numbers` package), turned into a table by `tools/gen_oui.py`.
   Thanks to [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) for the nudge to look at what
   the radios are saying (and for its careful notes on which maker codes can be trusted).
 - QR codes: [Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT), in `lib/qrcodegen/`.

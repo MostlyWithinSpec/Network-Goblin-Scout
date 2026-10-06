@@ -23,6 +23,8 @@ const Def kHats[] = {
     H("Bunny Ears", "Be out scouting in April", s.seasonMask & 2),              // 15
     H("Witch Hat", "Be out scouting in October", s.seasonMask & 4),             // 16
     H("Santa Hat", "Be out scouting in December", s.seasonMask & 8),            // 17
+    // v0.6.1
+    H("Black Hat", "Spot some hacker gear", s.hackerSpots >= 1),                // 18
 };
 
 #undef H

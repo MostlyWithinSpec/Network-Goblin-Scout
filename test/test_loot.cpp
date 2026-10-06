@@ -63,6 +63,75 @@ int main() {
   f = wifi(0x02AABB, nullptr);
   CHECK(strcmp(key(f), "mystery") == 0);
 
+  // pseudo-brands sit at fixed indexes (Loot.cpp relies on it)
+  const char* pseudo[] = {"mystery", "odd", "hotspot", "direct", "smarttv", "fastpair", "flipper", "pwnagotchi",
+                          "pineapple", "deauther"};
+  for (uint16_t i = 0; i < 10; i++) CHECK(strcmp(kBrands[i].key, pseudo[i]) == 0);
+
+  // Bluetooth
+  BleInfo bi;
+  bi.hasCompany = true;
+  bi.company = 0x004C;  // Apple
+  bi.msgType = 0x07;    // proximity pairing: AirPods
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "apple") == 0 && f.kind == K_AUDIO && f.rarity == R_UNCOMMON);
+  bi.msgType = 0x10;  // nearby info: a phone
+  f = classifyBle(bi);
+  CHECK(f.kind == K_PHONE && f.rarity == R_RARE);  // Apple's own rarity applies to its usual kind
+  bi.msgType = 0x09;
+  CHECK(classifyBle(bi).kind == K_TV);
+  bi = BleInfo{};
+  bi.hasCompany = true;
+  bi.company = 0x0087;  // Garmin
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "garmin") == 0 && f.kind == K_WEARABLE);
+  bi.company = 0x022B;  // Tesla
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "tesla") == 0 && f.rarity == R_EPIC);
+  bi.company = 0x7FFF;  // nobody we list
+  CHECK(strcmp(key(classifyBle(bi)), "odd") == 0);
+  bi = BleInfo{};
+  CHECK(strcmp(key(classifyBle(bi)), "mystery") == 0);
+  bi.tracker = 3;  // Tile service, no company id
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "tilebt") == 0 && f.kind == K_TRACKER);
+  bi = BleInfo{};
+  bi.fastPair = true;
+  CHECK(strcmp(key(classifyBle(bi)), "fastpair") == 0);
+
+  // hacker gear
+  bi = BleInfo{};
+  bi.hasCompany = true;
+  bi.company = 0x0E29;
+  CHECK(hackerOfBle(bi) == H_FLIPPER);
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "flipper") == 0 && f.kind == K_HACKER && f.rarity == R_LEGENDARY);
+  bi = BleInfo{};
+  bi.name = "Flipper Gobbo";
+  CHECK(hackerOfBle(bi) == H_FLIPPER);
+  bi.name = "Flippers R Us";
+  CHECK(hackerOfBle(bi) == H_NONE);
+  bi = BleInfo{};
+  bi.flipperSvc = true;
+  CHECK(hackerOfBle(bi) == H_FLIPPER);
+  bi = BleInfo{};
+  bi.hasCompany = true;
+  bi.company = 0x004C;
+  bi.msgType = 0x0F;
+  CHECK(blePopup(bi));
+  bi.msgType = 0x10;
+  CHECK(!blePopup(bi));
+  const uint8_t pwn[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD};
+  CHECK(hackerOfWifi(pwn, "") == H_PWNAGOTCHI);
+  f = classifyWifi(pwn, "", WifiTraits{});
+  CHECK(strcmp(key(f), "pwnagotchi") == 0 && f.rarity == R_LEGENDARY);
+  const uint8_t any[6] = {0x9C, 0xC9, 0xEB, 1, 2, 3};
+  CHECK(hackerOfWifi(any, "Pineapple_1A2B") == H_PINEAPPLE);
+  CHECK(hackerOfWifi(any, "pwned") == H_DEAUTHER);
+  CHECK(hackerOfWifi(any, "PineappleExpress") == H_NONE);
+  CHECK(hackerOfWifi(any, "Pwned by kids") == H_NONE);  // the deauther's name is lower case
+  CHECK(strcmp(key(classifyWifi(any, "Pineapple_1A2B", WifiTraits{})), "pineapple") == 0);
+
   CHECK(xp(R_COMMON) == 1 && xp(R_LEGENDARY) == 50);
   CHECK(strcmp(rarityName(R_EPIC), "Epic") == 0);
   printf(fails ? "%d FAILED\n" : "loot: all tests passed\n", fails);

@@ -181,6 +181,23 @@ const AchievementDef ACHIEVEMENTS[] = {
       s.lootKinds == (1u << loot::K_COUNT) - 1),
     A("space_goblin", "Space Goblin", "Find a Starlink dish", kSilver, Wifi, true, s.lootKinds & (1u << loot::K_SAT)),
     A("joyride", "Joyride", "Find a car's Wi-Fi", kSilver, Wifi, true, s.lootKinds & (1u << loot::K_CAR)),
+
+    // ---- v0.6.1: Bluetooth loot and hacker gear (ids 133-141) -----------------------------
+    A("audiophile", "Audiophile", "Find some headphones or a speaker", kBronze, Ble, false,
+      s.lootKinds & (1u << loot::K_AUDIO)),
+    A("wrist_watcher", "Wrist Watcher", "Find a smartwatch or fitness band", kBronze, Ble, false,
+      s.lootKinds & (1u << loot::K_WEARABLE)),
+    A("dolphin_spotter", "Dolphin Spotter", "Spot a Flipper Zero", kSilver, Star, true,
+      s.hackerMask & (1u << loot::H_FLIPPER)),
+    A("pwnagotchi_pal", "Pwnagotchi Pal", "Spot a Pwnagotchi", kGold, Star, true, s.hackerMask & (1u << loot::H_PWNAGOTCHI)),
+    A("fruit_salad", "Fruit Salad", "Spot a Wi-Fi Pineapple", kGold, Star, true, s.hackerMask & (1u << loot::H_PINEAPPLE)),
+    A("script_kiddie", "Script Kiddie Detector", "Spot an ESP deauther", kSilver, Star, true,
+      s.hackerMask & (1u << loot::H_DEAUTHER)),
+    A("popup_survivor", "Popup Survivor", "Live through a Bluetooth popup spam storm", kSilver, Ble, true,
+      s.hackerMask & (1u << loot::H_BLESPAM)),
+    A("hacker_bingo", "Hacker Bingo", "Spot all five kinds of hacker gear", kLegendary, Trophy, true,
+      s.hackerMask == (1u << loot::H_COUNT) - 1),
+    A("con_season", "Con Season", "Spot hacker gear 25 times", kGold, Trophy, false, s.hackerSpots >= 25),
 };
 
 #undef A

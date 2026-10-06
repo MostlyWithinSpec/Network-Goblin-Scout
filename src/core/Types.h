@@ -19,6 +19,9 @@ const uint8_t kHidden = 0x04;    // empty SSID
 const uint8_t kIBeacon = 0x01;
 const uint8_t kEddystone = 0x02;
 const uint8_t kNamed = 0x04;     // advertises a local name
+const uint8_t kCompany = 0x08;   // has manufacturer data (Sighting::company is valid)
+const uint8_t kFastPair = 0x10;  // Google Fast Pair service data
+const uint8_t kFlipper = 0x20;   // Flipper Zero service UUID 0x3081-0x3083
 // 802.15.4
 const uint8_t kZigbee = 0x01;    // looks like Zigbee (NWK header / beacon protocol 0)
 const uint8_t kThread = 0x02;    // looks like Thread (6LoWPAN / MAC security / beacon protocol 3)
@@ -50,6 +53,8 @@ struct Sighting {
   uint8_t peerHue;    // Peer only: colour of their goblin
   uint8_t tracker;    // BLE only: trackers::Kind if it looks like an item tracker (0 = no)
   uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h)
+  uint16_t company;   // BLE only: manufacturer data company id (if flags & sflag::kCompany)
+  uint8_t msgType;    // BLE only: first byte after the company id (Apple: Continuity type)
 };
 
 // Lifetime counters saved in state.json under their own names. Add new ones at will;
@@ -66,7 +71,8 @@ struct Sighting {
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
   X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
   X(nightMin) X(seasonMask) X(syncs)                                                     \
-  X(lootCommon) X(lootUncommon) X(lootRare) X(lootEpic) X(lootLegendary)
+  X(lootCommon) X(lootUncommon) X(lootRare) X(lootEpic) X(lootLegendary)                   \
+  X(hackerSpots) X(hackerMask)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -93,6 +99,7 @@ struct Stats {
   uint32_t lootBrand[kMaxBrands] = {};
   uint16_t lootBrands = 0;      // brands with at least one find
   uint32_t lootKinds = 0;       // bit per loot::Kind found
+  uint32_t lootSpecies[kMaxBrands] = {};  // per brand: bit per kind found (saved as "dexk")
 
   // This power-on session (not persisted)
   uint32_t sessWifiNew = 0;
@@ -124,7 +131,8 @@ struct Settings {
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
   New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced,
-  LootFind  // value = rarity | kind << 8 | xp << 16, text = brand name
+  LootFind,  // value = rarity | kind << 8 | xp << 16 (8 bits) | bluetooth << 24, text = brand name
+  Hacker     // value = loot::Hacker | xp << 16, text = what was spotted
 };
 
 struct UiEvent {

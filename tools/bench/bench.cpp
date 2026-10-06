@@ -80,6 +80,13 @@ int main() {
   ui::debugShow(3, 2);
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
   bench_mark(12);
+  ui::debugShow(0, 0);
+  now += 4000;
+  bench_mark(13);  // hacker overlay: BLE popup storm (the busiest one), 3 frames
+  ui::onEvent(ev(EventType::Hacker, loot::H_BLESPAM | 30u << 16), now);
+  now += 1500;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(14);
   bench_done();
   return 0;
 }

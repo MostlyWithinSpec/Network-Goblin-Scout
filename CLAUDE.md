@@ -96,8 +96,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    them either. GPS coordinates stay on the SD card (not on screen, serial, or in sync).
    One exception: the Wi-Fi network the *owner picks* for Goblin Sync (SSID + password) is kept in
    NVS. The picker's list of nearby names (`WifiScanner::recent`) lives in RAM only.
-   Loot rarity (`core/Loot`) reads the BSSID's maker code and a few SSID patterns at sighting time and
-   keeps only the brand key + counts.
+   Loot rarity (`core/Loot`) reads the BSSID's maker code and a few SSID patterns (Wi-Fi), or the
+   advert's company id / Apple Continuity type (BLE), at sighting time and keeps only the brand key + counts.
 2. **BLE rotating private addresses count as sightings, not unique devices.**
 3. **Works fully offline; SD card optional** — everything must degrade gracefully without it.
 4. **Scanner architecture**: every radio implements `Scanner` (`src/scanners/Scanner.h`)
@@ -108,7 +108,8 @@ Pins live in `include/board.h`; tunables in `include/config.h`.
    Same for `Radio` enum values, `NG_SAVED_COUNTERS` names, hat ids (`core/Hats.cpp`, also sent in
    the beacon), quest types (`core/Quests.h`), `Stats::seasonMask` bits (`hats::seasonBit`) and the
    beacon's hoard-tier bounds (`social/Sniff.h`, other goblins judge sniff-offs with them).
-   Loot brand keys (`tools/gen_oui.py`, saved in state.json "dex") and `loot::Kind` values: append only.
+   Loot brand keys (`tools/gen_oui.py`, saved in state.json "dex"/"dexk"), `loot::Kind` and `loot::Hacker`
+   values (`hackerMask` bits): append only.
 7. **Scanning stays passive.** The only automatic transmission is the goblin beacon (`src/social/`):
    non-connectable BLE advert, random per-boot address, no user data, user-toggleable. The only other
    traffic is **Goblin Sync, started by the owner** (Setup > Sync): pause scans, join the owner's
@@ -244,9 +245,18 @@ XP 1/3/8/20/50, only for the first network with a given name (other APs of the s
 no find), hidden networks get no setup bonus. Rare+ finds get an overlay; Hoard Book is Loot page 3
 (trophies moved to pages 4+). 10 achievements (133; bitset widened to 256). Sync sends loot counts +
 brands; server has a "legendary" board and hides goblins with more finds than networks.
-Regenerate the table: `python3 tools/gen_oui.py oui.txt > src/core/LootData.inc` (standards-oui.ieee.org
-was blocked in the sandbox; `pip download netaddr` ships a copy of the registry).
-Ideas from the owner, not started: BLE device rarity (company IDs), hacker-gear sightings (Flipper,
-Pwnagotchi one-sided sniff-off, Pineapple, BLE spam), SquachWatch interop (share our beacon format) and a
-rotating beacon id (the stable goblin id in the beacon is trackable; the encounter cross-check depends on it).
+v0.6.1 (compiles in CI; untested on hardware): Bluetooth loot + hacker gear. BLE brand from the advert's
+company id (Bluetooth SIG list; Flipper 0x0E29 added by hand), Apple split by Continuity type (0x07 AirPods
+-> Audio, 0x09 -> TV, 0x12 -> Tracker, else Phone). New kinds Audio, Wearables, Trackers, Hacker gear (22).
+Stable-address BLE device = a find; rotating address = a find only for a new brand+kind ("species",
+Stats::lootSpecies, saved as "dexk"). Hacker gear (every sighting, 30 min cooldown per kind, +30 XP, own
+overlay scene, Black Hat = hat 18): Flipper (company 0x0E29, service 0x3081-3, name "Flipper "), Pwnagotchi
+(BSSID DE:AD:BE:EF:DE:AD), Pineapple (SSID "Pineapple_"), deauther (SSID "pwned"), BLE spam (>= 8 Apple
+Nearby Action / Swift Pair adverts from rotating addresses in one scan; a heuristic). 9 achievements (142).
+Regenerate the table: `python3 tools/gen_oui.py oui.txt companies.py > src/core/LootData.inc`
+(standards-oui.ieee.org was blocked in the sandbox; `pip download netaddr bluetooth-numbers` ship copies:
+netaddr/eui/oui.txt and bluetooth_numbers/_companies.py).
+Ideas from the owner, not started: Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
+SquachWatch interop (share our beacon format) and a rotating beacon id (the stable goblin id in the beacon is
+trackable; the encounter cross-check depends on it).
 Next: ideas list (docs/sync-plan.md section 6), battery hardware when parts arrive.

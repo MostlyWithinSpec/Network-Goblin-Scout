@@ -72,7 +72,7 @@ int main() {
   stats.lootCommon = 812; stats.lootUncommon = 141; stats.lootRare = 23; stats.lootEpic = 3; stats.lootLegendary = 1;
   for (const char* k : {"mystery", "odd", "netgear", "tplink", "arris", "sagemcom", "eero", "google", "meraki", "cisco",
                         "aruba", "hp", "epson", "hotspot", "direct", "amazon", "sonos", "roku", "nintendo", "tesla",
-                        "ring", "espressif", "starlink"}) {
+                        "ring", "espressif", "starlink", "garmin", "bose", "tilebt", "flipper"}) {
     uint16_t b = loot::brandByKey(k);
     stats.lootBrand[b] = 3 + (b * 37) % 90;
     stats.lootBrands++;
@@ -189,7 +189,7 @@ int main() {
   ui::debugShow(2, 0); run(600); save("10_stats_spectrum");
   ui::debugShow(2, 1); run(600); save("11_stats_records");
   ui::debugShow(3, 0); run(600); save("12_loot_quests");
-  model.hatMask = 0x1FFFF;  // all hats, to see the art
+  model.hatMask = 0x3FFFF;  // all hats, to see the art
   ui::debugShow(3, 1); run(600); save("13_loot_wardrobe");
   model.hatMask = hats::unlockedMask(stats, model.level) | 0x1FF;
   ui::debugShow(3, 2); run(600); save("13b_loot_hoard_book");
@@ -209,6 +209,20 @@ int main() {
   ui::onEvent(ev(EventType::LootFind, loot::R_LEGENDARY | loot::K_BIZ << 8 | 50u << 16, "Cisco Meraki"), now);
   run(900); save("19c_loot_legendary");
   run(3000);
+  ui::onEvent(ev(EventType::LootFind, loot::R_RARE | loot::K_WEARABLE << 8 | 8u << 16 | 1u << 24, "Oura ring"), now);
+  run(900); save("19d_loot_ble_rare");
+  run(3000);
+  {
+    const char* names[] = {"flipper", "pwnagotchi", "pineapple", "deauther", "blespam"};
+    for (uint32_t h = 0; h < loot::H_COUNT; h++) {
+      ui::onEvent(ev(EventType::Hacker, h | 30u << 16, loot::hackerName((uint8_t)h)), now);
+      run(h == 0 ? 900 : 1500);
+      char name[40];
+      snprintf(name, sizeof(name), "19e_hacker_%u_%s", (unsigned)h, names[h]);
+      save(name);
+      run(5000);
+    }
+  }
   ui::debugShow(0, 0);
   model.scanning = nullptr;
   ui::pet().setBase(CState::Sleeping);

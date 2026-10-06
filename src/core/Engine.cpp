@@ -108,6 +108,8 @@ void Engine::process(const Sighting& s) {
 }
 
 void Engine::processWifi(const Sighting& s) {
+  uint8_t h = loot::hackerOfWifi(s.mac, s.name);  // every sighting: the goblin reacts each time (cooldown)
+  if (h != loot::H_NONE) spotHacker(h);
   if (s.rssi > stats_.bestRssi) stats_.bestRssi = s.rssi;
   if (s.rssi < 0 && (stats_.worstRssi == 0 || s.rssi < stats_.worstRssi)) stats_.worstRssi = s.rssi;
 
@@ -182,14 +184,7 @@ void Engine::processWifi(const Sighting& s) {
       tr.wep = s.auth == AuthCat::WEP;
       tr.enterprise = s.auth == AuthCat::Enterprise;
     }
-    loot::Find f = loot::classifyWifi(s.mac, s.name, tr);
-    addLoot(f);
-    xp = loot::xp(f.rarity);
-    if (!haveBest_ || f.rarity > best_.rarity) {
-      best_ = f;
-      bestXp_ = xp;
-      haveBest_ = true;
-    }
+    xp = lootFind(loot::classifyWifi(s.mac, s.name, tr), false);
   }
   addXp(xp, true);
   feed(-15, -4);
@@ -200,9 +195,26 @@ void Engine::processBle(const Sighting& s) {
   uint64_t anyId = id(Radio::BLE, s.mac, 6);
   blip(anyId, s.rssi, Radio::BLE);
   if (s.tracker) watchTracker(anyId, s);
+  loot::BleInfo bi;
+  bi.hasCompany = s.flags & sflag::kCompany;
+  bi.company = s.company;
+  bi.msgType = s.msgType;
+  bi.tracker = s.tracker;
+  bi.fastPair = s.flags & sflag::kFastPair;
+  bi.flipperSvc = s.flags & sflag::kFlipper;
+  bi.iBeacon = s.flags & sflag::kIBeacon;
+  bi.name = s.name;
+  uint8_t h = loot::hackerOfBle(bi);
+  if (h != loot::H_NONE) spotHacker(h);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
-  if (!s.stableAddr) return;
+  // A rotating device is loot only the first time its brand + kind turns up (a new species).
+  if (!s.stableAddr) {
+    if (loot::blePopup(bi)) blePopups_++;
+    loot::Find f = loot::classifyBle(bi);
+    if (f.brand < Stats::kMaxBrands && !(stats_.lootSpecies[f.brand] & (1u << f.kind))) addXp(lootFind(f, true), true);
+    return;
+  }
   uint64_t bleId = anyId;
   char extra[32];
   snprintf(extra, sizeof(extra), "%d,%lu", s.rssi, (unsigned long)gps::unixTime());
@@ -213,7 +225,7 @@ void Engine::processBle(const Sighting& s) {
   if (s.flags & sflag::kNamed) stats_.bleNamed++;
   if (s.flags & sflag::kIBeacon) stats_.bleIBeacon++;
   if (s.flags & sflag::kEddystone) stats_.bleEddystone++;
-  addXp(XP_NEW_BLE, true);
+  addXp(lootFind(loot::classifyBle(bi), true), true);
   feed(-8, -2);
 }
 
@@ -402,27 +414,33 @@ void Engine::endScan(Radio radio, uint32_t seenThisScan) {
     scanTopN_ = 0;
     stats_.lastScanSeen = seenThisScan;
     if (seenThisScan > stats_.maxApsInScan) stats_.maxApsInScan = seenThisScan;
-    if (haveBest_ && best_.rarity >= loot::R_RARE) {
-      // a rare find gets its own overlay; the rest of the batch rides along quietly
-      snprintf(t, sizeof(t), "%s", loot::kBrands[best_.brand].name);
-      push(EventType::LootFind, best_.rarity | (uint32_t)best_.kind << 8 | (bestXp_ & 0xFFFF) << 16, t);
-    } else if (batchWifiNew) {
-      if (haveBest_ && batchWifiNew == 1)
-        snprintf(t, sizeof(t), "%s! %s", loot::kBrands[best_.brand].name, loot::rarityName(best_.rarity));
-      else if (haveBest_)
-        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchWifiNew, loot::kBrands[best_.brand].name);
-      else
+    int r = flushBest();
+    if (r < loot::R_RARE && batchWifiNew) {
+      const char* best = loot::kBrands[best_.brand].name;
+      if (r < 0)
         snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
+      else if (batchWifiNew == 1)
+        snprintf(t, sizeof(t), "%s! %s", best, loot::rarityName((uint8_t)r));
+      else
+        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchWifiNew, best);
       push(EventType::NewWifi, batchWifiNew, t);
     }
     batchWifiNew = 0;
-    haveBest_ = false;
   } else if (radio == Radio::BLE) {
     stats_.lastBleSeen = seenThisScan;
     if (seenThisScan > stats_.maxBleInScan) stats_.maxBleInScan = seenThisScan;
-    if (batchBleNew) {
-      snprintf(t, sizeof(t), "%lu new BLE device%s", (unsigned long)batchBleNew, batchBleNew == 1 ? "" : "s");
-      push(EventType::NewBle, batchBleNew, t);
+    if (blePopups_ >= BLE_SPAM_POPUPS) spotHacker(loot::H_BLESPAM);
+    blePopups_ = 0;
+    int r = flushBest();
+    if (r < loot::R_RARE && (batchBleNew || r >= 0)) {  // r >= 0 alone: a new species from a rotating address
+      const char* best = loot::kBrands[best_.brand].name;
+      if (r < 0)
+        snprintf(t, sizeof(t), "%lu new BLE device%s", (unsigned long)batchBleNew, batchBleNew == 1 ? "" : "s");
+      else if (batchBleNew <= 1)
+        snprintf(t, sizeof(t), "%s! %s", best, loot::rarityName((uint8_t)r));
+      else
+        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchBleNew, best);
+      push(EventType::NewBle, batchBleNew ? batchBleNew : 1, t);
     }
     batchBleNew = 0;
   } else if (radio == Radio::Thread) {
@@ -491,6 +509,44 @@ void Engine::updateLocation() {
 }
 
 // ---------------------------------------------------------------------------
+uint32_t Engine::lootFind(const loot::Find& f, bool ble) {
+  addLoot(f);
+  uint32_t xp = loot::xp(f.rarity);
+  if (!haveBest_ || f.rarity > best_.rarity) {
+    best_ = f;
+    bestXp_ = xp;
+    bestBle_ = ble;
+    haveBest_ = true;
+  }
+  return xp;
+}
+
+// End of a scan: the rarity of the best find (best_), or -1 if there was none. A Rare or better
+// find gets its own overlay here; the caller puts anything less in the scan banner.
+int Engine::flushBest() {
+  if (!haveBest_) return -1;
+  haveBest_ = false;
+  if (best_.rarity >= loot::R_RARE)
+    push(EventType::LootFind,
+         best_.rarity | (uint32_t)best_.kind << 8 | (bestXp_ & 0xFF) << 16 | (uint32_t)bestBle_ << 24,
+         loot::kBrands[best_.brand].name);
+  return best_.rarity;
+}
+
+// Hacker gear nearby: a fun reaction and some XP, at most once per kind per HACKER_COOLDOWN_MS.
+// Purely passive: whoever owns the gear never knows.
+void Engine::spotHacker(uint8_t h) {
+  if (h >= loot::H_COUNT) return;
+  uint32_t now = millis();
+  if (hackerAtMs_[h] && now - hackerAtMs_[h] < HACKER_COOLDOWN_MS) return;
+  hackerAtMs_[h] = now ? now : 1;
+  stats_.hackerSpots++;
+  stats_.hackerMask |= 1u << h;
+  addXp(XP_HACKER_SPOT);
+  push(EventType::Hacker, h | (uint32_t)XP_HACKER_SPOT << 16, loot::hackerName(h));
+  saveSoon_ = true;
+}
+
 void Engine::addLoot(const loot::Find& f) {
   switch (f.rarity) {
     case loot::R_COMMON: stats_.lootCommon++; break;
@@ -499,7 +555,10 @@ void Engine::addLoot(const loot::Find& f) {
     case loot::R_EPIC: stats_.lootEpic++; break;
     default: stats_.lootLegendary++; break;
   }
-  if (f.brand < Stats::kMaxBrands && stats_.lootBrand[f.brand]++ == 0) stats_.lootBrands++;
+  if (f.brand < Stats::kMaxBrands) {
+    if (stats_.lootBrand[f.brand]++ == 0) stats_.lootBrands++;
+    stats_.lootSpecies[f.brand] |= 1u << f.kind;
+  }
   stats_.lootKinds |= 1u << f.kind;
   if (f.rarity >= loot::R_RARE) saveSoon_ = true;
 }
@@ -697,6 +756,9 @@ void Engine::saveNow() {
   JsonObject dex = doc["dex"].to<JsonObject>();  // Hoard Book: finds per brand key
   for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++)
     if (stats_.lootBrand[i]) dex[loot::kBrands[i].key] = stats_.lootBrand[i];
+  JsonObject dexk = doc["dexk"].to<JsonObject>();  // kinds found per brand (Bluetooth species)
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++)
+    if (stats_.lootSpecies[i]) dexk[loot::kBrands[i].key] = stats_.lootSpecies[i];
 
   JsonArray ach = doc["achievements"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
@@ -761,7 +823,14 @@ void Engine::loadState() {
     if (stats_.lootBrand[b]) {
       stats_.lootBrands++;
       stats_.lootKinds |= 1u << loot::kBrands[b].kind;
+      stats_.lootSpecies[b] |= 1u << loot::kBrands[b].kind;  // saves from v0.6.0 have no "dexk"
     }
+  }
+  for (JsonPair kv : doc["dexk"].as<JsonObject>()) {
+    uint16_t b = loot::brandByKey(kv.key().c_str());
+    if (b == loot::kNone || b >= Stats::kMaxBrands) continue;
+    stats_.lootSpecies[b] |= (kv.value() | 0u) & ((1u << loot::K_COUNT) - 1);
+    stats_.lootKinds |= stats_.lootSpecies[b];
   }
   for (JsonVariant v : doc["achievements"].as<JsonArray>()) {
     const char* key = v.as<const char*>();

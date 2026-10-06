@@ -12,7 +12,8 @@ static_assert(sizeof(kBrands) / sizeof(kBrands[0]) <= 224, "widen Stats::kMaxBra
 
 namespace {
 // Pseudo-brands: the first entries of kBrands (tools/gen_oui.py)
-const uint16_t B_MYSTERY = 0, B_ODD = 1, B_HOTSPOT = 2, B_DIRECT = 3, B_SMARTTV = 4;
+const uint16_t B_MYSTERY = 0, B_ODD = 1, B_HOTSPOT = 2, B_DIRECT = 3, B_SMARTTV = 4, B_FASTPAIR = 5;
+const uint16_t B_FLIPPER = 6, B_PWNAGOTCHI = 7, B_PINEAPPLE = 8, B_DEAUTHER = 9;
 
 const uint8_t kKindRarity[K_COUNT] = {
     R_COMMON,    // mystery
@@ -33,12 +34,19 @@ const uint8_t kKindRarity[K_COUNT] = {
     R_RARE,      // retail
     R_UNCOMMON,  // DIY
     R_RARE,      // industrial
+    R_UNCOMMON,  // audio
+    R_UNCOMMON,  // wearable
+    R_UNCOMMON,  // tracker
+    R_LEGENDARY, // hacker gear
 };
+// Short: the Hoard Book shows them in three columns.
 const char* const kKindNames[K_COUNT] = {
-    "Mystery boxes", "Odd boxes", "ISP gateways", "Home routers", "Mesh Wi-Fi", "Business APs",
-    "Printers", "Phones", "Smart home", "TVs & streamers", "Game consoles", "Cars",
-    "Cameras & drones", "Satellite", "Mobile routers", "Shops & tills", "Tinker boards", "Industrial",
+    "Mystery", "Odd boxes", "ISP boxes", "Routers", "Mesh Wi-Fi", "Office APs",
+    "Printers", "Phones", "Smart home", "TVs", "Gaming", "Cars",
+    "Cameras", "Satellite", "Mobile Wi-Fi", "Shops", "Tinker kit", "Industrial",
+    "Audio", "Wearables", "Trackers", "Hackers",
 };
+const char* const kHackerNames[H_COUNT] = {"Flipper Zero", "Pwnagotchi", "Wi-Fi Pineapple", "Deauther", "BLE spam"};
 const char* const kRarityNames[R_COUNT] = {"Common", "Uncommon", "Rare", "Epic", "Legendary"};
 const uint32_t kXp[R_COUNT] = {1, 3, 8, 20, 50};
 
@@ -78,6 +86,18 @@ uint16_t brandOfOui(uint32_t oui) {
   return kNone;
 }
 
+uint16_t brandOfCompany(uint16_t company) {
+  size_t lo = 0, hi = sizeof(kCompany) / sizeof(kCompany[0]);
+  while (lo < hi) {
+    size_t mid = (lo + hi) / 2;
+    uint32_t c = kCompany[mid] >> 8;
+    if (c == company) return (uint16_t)(kCompany[mid] & 0xFF);
+    if (c < company) lo = mid + 1;
+    else hi = mid;
+  }
+  return kNone;
+}
+
 uint16_t brandByKey(const char* key) {
   for (uint16_t i = 0; i < kBrandCount; i++)
     if (strcmp(kBrands[i].key, key) == 0) return i;
@@ -87,9 +107,79 @@ uint16_t brandByKey(const char* key) {
 uint8_t kindRarity(uint8_t kind) { return kind < K_COUNT ? kKindRarity[kind] : (uint8_t)R_COMMON; }
 const char* kindName(uint8_t kind) { return kind < K_COUNT ? kKindNames[kind] : "?"; }
 const char* rarityName(uint8_t r) { return r < R_COUNT ? kRarityNames[r] : "?"; }
+const char* hackerName(uint8_t h) { return h < H_COUNT ? kHackerNames[h] : "?"; }
 uint32_t xp(uint8_t r) { return r < R_COUNT ? kXp[r] : 1; }
 
+// Hacker gear on Wi-Fi, from what it broadcasts by default:
+//   Pwnagotchi: beacons from DE:AD:BE:EF:DE:AD (how pwnagotchis find each other)
+//   Hak5 Wi-Fi Pineapple: management network "Pineapple_XXXX"
+//   ESP8266/ESP32 deauther: control network "pwned"
+uint8_t hackerOfWifi(const uint8_t mac[6], const char* ssid) {
+  static const uint8_t kPwn[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD};
+  if (memcmp(mac, kPwn, 6) == 0) return H_PWNAGOTCHI;
+  if (ssid && startsWithNoCase(ssid, "Pineapple_")) return H_PINEAPPLE;
+  if (ssid && strncmp(ssid, "pwned", 5) == 0) return H_DEAUTHER;
+  return H_NONE;
+}
+
+// Flipper Zero: Flipper Devices' company id 0x0E29, its own service UUIDs 0x3081-0x3083, or the
+// default "Flipper <name>" advert name.
+uint8_t hackerOfBle(const BleInfo& b) {
+  if ((b.hasCompany && b.company == 0x0E29) || b.flipperSvc) return H_FLIPPER;
+  if (b.name && strncmp(b.name, "Flipper ", 8) == 0) return H_FLIPPER;
+  return H_NONE;
+}
+
+// Popup adverts: Apple "Nearby Action" (0x0F) and Microsoft Swift Pair. Real devices send them
+// now and then; spam tools send dozens from fresh addresses every second.
+bool blePopup(const BleInfo& b) {
+  return b.hasCompany && ((b.company == 0x004C && b.msgType == 0x0F) || (b.company == 0x0006 && b.msgType == 0x03));
+}
+
+Find classifyBle(const BleInfo& in) {
+  Find f{};
+  uint16_t b = kNone;
+  uint8_t kind = 0xFF;
+  if (hackerOfBle(in) == H_FLIPPER) b = B_FLIPPER;
+  if (b == kNone && in.hasCompany) b = brandOfCompany(in.company);
+  if (in.tracker) kind = K_TRACKER;
+  if (b == kNone && in.tracker) {
+    // tracker services without a company id (trackers::Kind values: 1 Find My .. 5 Chipolo)
+    static const char* const kTrk[] = {nullptr, "apple", "samsung", "tilebt", "google", "chipolo"};
+    if (in.tracker < sizeof(kTrk) / sizeof(kTrk[0]) && kTrk[in.tracker]) b = brandByKey(kTrk[in.tracker]);
+  }
+  if (b == kNone && in.fastPair) b = B_FASTPAIR;
+  if (b == kNone) b = in.hasCompany ? B_ODD : B_MYSTERY;
+  if (kind == 0xFF && in.hasCompany && in.company == 0x004C) {
+    // Apple Continuity: what the device says it is
+    switch (in.msgType) {
+      case 0x07: kind = K_AUDIO; break;            // AirPods / Beats pairing
+      case 0x09: kind = K_TV; break;               // AirPlay target: Apple TV, HomePod
+      case 0x12: kind = K_TRACKER; break;          // Find My
+      case 0x02: kind = K_RETAIL; break;           // iBeacon
+      default: kind = K_PHONE; break;              // nearby info, handoff, AirDrop...
+    }
+  }
+  if (kind == 0xFF && in.iBeacon) kind = K_RETAIL;  // shop beacons
+  if (kind == 0xFF) kind = kBrands[b].kind;
+  f.brand = b;
+  f.kind = kind;
+  // a brand's own rarity applies to its usual kind; anything else uses the kind's rarity
+  f.rarity = kBrands[b].rarity != R_KIND && kind == kBrands[b].kind ? kBrands[b].rarity : kindRarity(kind);
+  f.bonus = false;
+  return f;
+}
+
 Find classifyWifi(const uint8_t mac[6], const char* ssid, const WifiTraits& t) {
+  uint8_t h = hackerOfWifi(mac, ssid);
+  if (h != H_NONE) {
+    static const uint16_t kHb[] = {B_FLIPPER, B_PWNAGOTCHI, B_PINEAPPLE, B_DEAUTHER};
+    Find f{};
+    f.brand = kHb[h];
+    f.kind = K_HACKER;
+    f.rarity = R_LEGENDARY;
+    return f;
+  }
   uint16_t b;
   if (mac[0] & 0x02) {  // locally administered: a random or derived address, no maker code
     b = brandOfName(ssid);
