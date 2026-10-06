@@ -986,6 +986,11 @@ void drawShare(gfx::Surface& s, const UiModel& m) {
 const int kRows = 15;
 const int16_t kRowH = 38;
 
+// Rows by id (the ids are what the drawing and tap code switch on). kOrder is the order on screen:
+// the goblin and its online life first, then the radios, then display and odds and ends.
+const int kOrder[] = {14, 12, 9, 11, 2, 3, 4, 5, 0, 1, 13, 8, 7, 6, 10};
+static_assert(sizeof(kOrder) / sizeof(kOrder[0]) == 15, "every Setup row appears once");
+
 struct RowInfo { const char* label; const char* sub; };
 const RowInfo kRowInfo[kRows] = {
     {"Brightness", nullptr},
@@ -1024,9 +1029,10 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
   const Settings& st = *m.settings;
   if (!dragging) setupScroll += (setupScrollTarget - setupScroll) * clampf(dt * 12, 0, 1);
   s.setClip(0, kBodyY, W, kBodyH);
-  for (int i = 0; i < kRows; i++) {
-    int16_t y = (int16_t)(kBodyY + 4 + i * kRowH - setupScroll);
+  for (int slot = 0; slot < kRows; slot++) {
+    int16_t y = (int16_t)(kBodyY + 4 + slot * kRowH - setupScroll);
     if (y > kBodyY + kBodyH || y + kRowH < kBodyY) continue;
+    const int i = kOrder[slot];  // row id
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
     if (i == 12) {
@@ -2255,6 +2261,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
     case Screen::Setup: {
       int row = (int)((y - kBodyY - 4 + setupScroll) / kRowH);
       if (row < 0 || row >= kRows) break;
+      row = kOrder[row];  // screen position -> row id
       Settings& st = *m.settings;
       if (row == 0) {
         int b = st.brightness + (x < W - 90 ? -10 : 10);
@@ -2285,7 +2292,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         startClock(m);
       } else if (row == 14) {
         startNaming(Screen::Setup, m.myName);
-      } else {
+      } else if (x > W - 110) {  // switches flip only on the switch, so a sloppy scroll can't
         toggleSetting(row, m);
       }
       break;

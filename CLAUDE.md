@@ -272,6 +272,9 @@ none / Pip / Lily / both, saved as settings "pet". ui/PetArt draws a cat from a 
 Pip = the owner's torico (black, white bib + paws, ginger half-face), Lily = the owner's tiny tortie
 (brindled, ginger blaze, kitten). Poses follow the goblin's mood (sit / alert while scanning / hop on finds /
 curled asleep, both cuddle), hearts when the goblin is petted. ~1.4 M instr/frame for both on Home.
+v0.6.4 (compiles; untested on hardware): Setup reordered (Ui.cpp kOrder: goblin name, Sync, Pet, Share
+card, radios, display, touch test); row ids unchanged, so code switches on ids. Switch rows only flip when
+the switch side (x > W-110) is tapped: the owner found Mesh scan off without meaning to.
 Next for pets: user-added cats from a coat recipe on SD (/pets/*.json), maybe picture packs for non-cats.
 Ideas from the owner, not started: Michael Myers-style goblin (keep it a generic masked homage if shared),
 Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
