@@ -261,6 +261,8 @@ v0.6.2 (compiles; untested on hardware): SquachWatch visits. Their SquachMesh he
 their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing, never
 their sprite unless the author permits), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
 (Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
+The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
+whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
 Ideas from the owner, not started: Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
 SquachWatch interop (share our beacon format) and a rotating beacon id (the stable goblin id in the beacon is
 trackable; the encounter cross-check depends on it).
