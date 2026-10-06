@@ -206,7 +206,7 @@ void Engine::processBle(const Sighting& s) {
   bi.name = s.name;
   bi.squach = s.flags & sflag::kSquach;
   if (bi.squach) squachVisit(s);
-  uint8_t h = bi.squach ? loot::H_NONE : loot::hackerOfBle(bi);  // a Squachy named "Flipper X" is still a Squachy
+  uint8_t h = bi.squach ? (uint8_t)loot::H_NONE : loot::hackerOfBle(bi);  // a Squachy named "Flipper X" is still a Squachy
   if (h != loot::H_NONE) spotHacker(h);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
