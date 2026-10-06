@@ -1,7 +1,9 @@
 // Host unit test for the goblin beacon codec. Build & run:
 //   g++ -std=c++17 -Wall -Wextra -I src test/test_peer.cpp -o /tmp/tpeer && /tmp/tpeer
 #include <cstdio>
+#include <cstring>
 #include "social/PeerCodec.h"
+#include "social/SquachVisit.h"
 #include "social/Sniff.h"
 
 using namespace peercodec;
@@ -57,6 +59,24 @@ int main() {
   buf[2] = 'N';
   CHECK(decode(buf, n, b) && (b.flags & 0x1F) == 13 && (b.flags >> 5) == 5);
 
+  // SquachWatch visits (social/SquachVisit.h)
+  {
+    squachvisit::Visitor v;
+    const uint8_t indexed[8] = {'S', 'Q', 'M', '1', 1, 0x08, 0x30, 0};  // aura lit, nickname 3
+    CHECK(squachvisit::decode(indexed, 8, v) && v.aura && v.name[0] == 0);
+    uint8_t named[20] = {'S', 'Q', 'M', '1', 1, 0x20, 0x00, 0, 'B', 'i', 'g', 'f', 'o', 'o', 't'};
+    CHECK(squachvisit::decode(named, 20, v) && !v.aura && strcmp(v.name, "Bigfoot") == 0);
+    CHECK(!squachvisit::decode(named, 8, v));            // custom bit without the name bytes
+    uint8_t bad[8] = {'S', 'Q', 'M', '1', 2, 0, 0, 0};   // unknown version
+    CHECK(!squachvisit::decode(bad, 8, v));
+    bad[4] = 1;
+    bad[7] = 1;                                          // reserved flags set
+    CHECK(!squachvisit::decode(bad, 8, v));
+    const uint8_t goblin[8] = {'N', 'G', 1, 0x78, 0x56, 0x34, 0x12, 0};
+    CHECK(!squachvisit::decode(goblin, 8, v));           // one of ours, not a Squachy
+    named[9] = 0x07;                                     // unprintable name byte
+    CHECK(!squachvisit::decode(named, 20, v));
+  }
   printf(failures ? "%d FAILED\n" : "all peer codec tests passed\n", failures);
   return failures != 0;
 }

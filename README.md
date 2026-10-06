@@ -46,10 +46,11 @@ press **Install** on the [web flasher](https://scout.networkgoblin.dev/flash/). 
 | 🕸️ **Mesh eavesdropping** | The C5's third radio listens to 802.15.4: Zigbee bulbs, Thread sensors, Matter hubs. Your smart home is chattier than you think. |
 | 💎 **Loot rarity** | Every new network or gadget is loot. The goblin works out what it found from the maker code: *another Netgear? Common.* An office access point left wide open? **Legendary.** A Starlink dish, a Tesla, AirPods, a Garmin, an Oura ring, a card terminal... 193 brands in 22 kinds, five rarities from Common (1 XP) to Legendary (50 XP), and a **Hoard Book** to fill in. Phones that keep changing their Bluetooth address only count the first time a brand turns up, so there's no farming. |
 | 🐬 **Hacker gear** | The goblin notices the hacker toys: a **Flipper Zero** (a wild dolphin appears!), a **Pwnagotchi**, a **Wi-Fi Pineapple**, an **ESP deauther** and **Bluetooth popup spam** storms. Each one gets its own scene, XP, a trophy, and the **Black Hat**. Strictly listening: whoever owns the gear never knows. |
+| 🦶 **Squatch sightings** | If a [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) nearby has SquachMesh switched on, its Squachy drops by: a synthwave sunset, a high five, and its name if it has one. Fellow pets of the airwaves. |
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
 | 👃 **Sniff-offs** | Then they sniff each other's hoards. Bigger hoard wins (level breaks a tie) and *both* goblins get XP. Bragging rights not included, but strongly implied. |
 | 🏷️ **Tracker alert** | Actually useful: if an AirTag, Tile, SmartTag or Google tracker keeps tagging along with you through 3+ places for 15+ minutes, the goblin sounds the alarm. Your own? Tap **It's mine** and it never nags about that one again. |
-| 🏆 **142 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
+| 🏆 **144 achievements** | Bronze, silver, gold and shimmering-rainbow legendary. Some are secret. One involves petting the goblin a frankly concerning number of times. |
 | ✨ **A goblin with feelings** | It bobs, blinks, hops when it finds something, glows when it levels up, and snores in pocket mode. It also talks (and babbles, if you wire up a speaker). Mostly about packets. |
 | 🍖 **Needs** | It gets **hungry** (feed it new devices) and **bored** (show it new channels, places, networks and goblins). Keep both meters full and it earns **+25% XP**. Neglect it and it sulks. |
 | 📜 **Quests** | A board of three challenges at a time: *"Sniff out 20 new networks"*, *"Find a Wi-Fi 6 router"*... Clear the board for bonus XP, then a fresh one turns up. |
@@ -281,7 +282,7 @@ sd_card/                 copy to the microSD card
 - [x] Dual-band Wi-Fi + BLE sniffing, persistent dedupe
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
-- [x] 142 achievements, levels, streaks, exploration
+- [x] 144 achievements, levels, streaks, exploration
 - [x] Hunger & boredom, quest boards, 17 hats (4 seasonal), radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
@@ -292,6 +293,7 @@ sd_card/                 copy to the microSD card
 - [x] Encounter cross-checks: the "goblins met" board counts only meetings both goblins report
 - [x] Loot rarity: 193 brands (Wi-Fi and Bluetooth), five rarities, a Hoard Book, and a Legendary finds board
 - [x] Hacker gear sightings: Flipper Zero, Pwnagotchi, Wi-Fi Pineapple, deauthers, Bluetooth popup spam
+- [x] SquachWatch visits (their SquachMesh hello, read from its published format)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits
@@ -304,7 +306,8 @@ sd_card/                 copy to the microSD card
 - Maker codes: the [IEEE OUI registry](https://standards-oui.ieee.org/) and the Bluetooth SIG company list
   (via the `bluetooth-numbers` package), turned into a table by `tools/gen_oui.py`.
   Thanks to [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) for the nudge to look at what
-  the radios are saying (and for its careful notes on which maker codes can be trusted).
+  the radios are saying (and for its careful notes on which maker codes can be trusted). The visiting
+  Squachy on our screen is our own drawing; the real one lives on SquachWatch.
 - QR codes: [Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT), in `lib/qrcodegen/`.
 
 <p align="center"><i>Feed the goblin. Respect the airwaves.</i></p>

@@ -87,6 +87,12 @@ int main() {
   now += 1500;
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
   bench_mark(14);
+  now += 6000;
+  bench_mark(15);  // SquachWatch visit (sunset, grid, two characters), 3 frames
+  ui::onEvent(ev(EventType::Squach, 1u | 40u << 16), now);
+  now += 1600;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(16);
   bench_done();
   return 0;
 }

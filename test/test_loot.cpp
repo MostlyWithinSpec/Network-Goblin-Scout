@@ -65,8 +65,8 @@ int main() {
 
   // pseudo-brands sit at fixed indexes (Loot.cpp relies on it)
   const char* pseudo[] = {"mystery", "odd", "hotspot", "direct", "smarttv", "fastpair", "flipper", "pwnagotchi",
-                          "pineapple", "deauther"};
-  for (uint16_t i = 0; i < 10; i++) CHECK(strcmp(kBrands[i].key, pseudo[i]) == 0);
+                          "pineapple", "deauther", "squachwatch"};
+  for (uint16_t i = 0; i < 11; i++) CHECK(strcmp(kBrands[i].key, pseudo[i]) == 0);
 
   // Bluetooth
   BleInfo bi;
@@ -121,6 +121,12 @@ int main() {
   CHECK(blePopup(bi));
   bi.msgType = 0x10;
   CHECK(!blePopup(bi));
+  bi = BleInfo{};
+  bi.hasCompany = true;
+  bi.company = 0xFFFF;
+  bi.squach = true;
+  f = classifyBle(bi);
+  CHECK(strcmp(key(f), "squachwatch") == 0 && f.kind == K_HACKER && f.rarity == R_LEGENDARY);
   const uint8_t pwn[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD};
   CHECK(hackerOfWifi(pwn, "") == H_PWNAGOTCHI);
   f = classifyWifi(pwn, "", WifiTraits{});

@@ -22,6 +22,7 @@ const uint8_t kNamed = 0x04;     // advertises a local name
 const uint8_t kCompany = 0x08;   // has manufacturer data (Sighting::company is valid)
 const uint8_t kFastPair = 0x10;  // Google Fast Pair service data
 const uint8_t kFlipper = 0x20;   // Flipper Zero service UUID 0x3081-0x3083
+const uint8_t kSquach = 0x40;    // a SquachWatch saying hello (social/SquachVisit.h); name = its Squachy's
 // 802.15.4
 const uint8_t kZigbee = 0x01;    // looks like Zigbee (NWK header / beacon protocol 0)
 const uint8_t kThread = 0x02;    // looks like Thread (6LoWPAN / MAC security / beacon protocol 3)
@@ -52,7 +53,7 @@ struct Sighting {
   uint16_t peerLevel; // Peer only
   uint8_t peerHue;    // Peer only: colour of their goblin
   uint8_t tracker;    // BLE only: trackers::Kind if it looks like an item tracker (0 = no)
-  uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h)
+  uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h). BLE + sflag::kSquach: 1 = aura lit
   uint16_t company;   // BLE only: manufacturer data company id (if flags & sflag::kCompany)
   uint8_t msgType;    // BLE only: first byte after the company id (Apple: Continuity type)
 };
@@ -72,7 +73,7 @@ struct Sighting {
   X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
   X(nightMin) X(seasonMask) X(syncs)                                                     \
   X(lootCommon) X(lootUncommon) X(lootRare) X(lootEpic) X(lootLegendary)                   \
-  X(hackerSpots) X(hackerMask)
+  X(hackerSpots) X(hackerMask) X(squachVisits)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -132,7 +133,8 @@ enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
   New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced,
   LootFind,  // value = rarity | kind << 8 | xp << 16 (8 bits) | bluetooth << 24, text = brand name
-  Hacker     // value = loot::Hacker | xp << 16, text = what was spotted
+  Hacker,    // value = loot::Hacker | xp << 16, text = what was spotted
+  Squach     // value = aura | xp << 16, text = the visiting Squachy's name ("" = a stock one)
 };
 
 struct UiEvent {

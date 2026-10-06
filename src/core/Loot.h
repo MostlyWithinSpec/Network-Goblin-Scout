@@ -56,6 +56,7 @@ struct BleInfo {
   bool fastPair = false;      // Google Fast Pair service data (headphones and friends)
   bool flipperSvc = false;    // Flipper Zero's own service UUIDs 0x3081-0x3083
   bool iBeacon = false;
+  bool squach = false;        // a SquachWatch's SquachMesh advert (company 0xFFFF, "SQM1")
   const char* name = nullptr; // advertised local name, may be null
 };
 

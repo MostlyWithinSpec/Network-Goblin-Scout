@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.6.1"
+#define NG_FW_VERSION           "0.6.2"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -70,6 +70,8 @@
 #define XP_HACKER_SPOT          30         // spotted hacker gear (Flipper, Pwnagotchi...): each time, with a cooldown
 #define HACKER_COOLDOWN_MS      (30UL * 60 * 1000)  // per kind of gear: one reaction per 30 min
 #define BLE_SPAM_POPUPS         8          // popup adverts from different addresses in one BLE scan = spam
+#define XP_SQUACH_VISIT         40         // a SquachWatch said hello
+#define SQUACH_COOLDOWN_MS      (20UL * 60 * 1000)  // one greeting per 20 min
 
 // ---- Quests & needs -------------------------------------------------------
 #define QUEST_COOLDOWN_MIN      30         // minutes of scanning before a new board after clearing one

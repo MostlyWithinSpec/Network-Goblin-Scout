@@ -79,7 +79,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot, Hacker };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot, Hacker, Squach };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -1165,6 +1165,7 @@ uint32_t overlayLength(OvType t) {
   if (t == OvType::Sniff) return 5000;
   if (t == OvType::Loot) return 3400;
   if (t == OvType::Hacker) return 5200;
+  if (t == OvType::Squach) return 6000;
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1223,7 +1224,101 @@ void startOverlay(uint32_t now) {
       led(0, 60, 10, 1500);
       companion.react(CState::Excited, 5000, now);
       break;
+    case OvType::Squach:
+      sfx(kSfxEncounter);
+      led(60, 0, 40, 2500);
+      companion.react(CState::Excited, 6000, now);
+      break;
   }
+}
+
+// ---- A SquachWatch visits ---------------------------------------------------------------------
+// Our own homage to SquachWatch's mascot (their art is theirs): a shades-wearing Bigfoot on a
+// synthwave sunset, high-fiving the goblin.
+void drawSquatch(gfx::Surface& s, float x, float y, float k, float arm, uint8_t a) {  // (x, y) = feet
+  uint16_t fur = hex(0x7A4A2A), dark = hex(0x553218), face = hex(0xC99A6E), lens = hex(0x16101F);
+  s.fillCircle(x - 9 * k, y - 4 * k, 8 * k, dark, a);                       // feet
+  s.fillCircle(x + 9 * k, y - 4 * k, 8 * k, dark, a);
+  s.fillRoundRect((int16_t)(x - 20 * k), (int16_t)(y - 62 * k), (int16_t)(40 * k), (int16_t)(58 * k), (int16_t)(16 * k), fur, a);
+  s.fillCircle(x - 21 * k, y - 34 * k, 7 * k, fur, a);                      // left arm, down
+  s.fillRoundRect((int16_t)(x - 26 * k), (int16_t)(y - 50 * k), (int16_t)(10 * k), (int16_t)(26 * k), (int16_t)(5 * k), fur, a);
+  // right arm: raised for the high five (arm = 0 down .. 1 up), reaching left towards the goblin
+  float hx = x - 6 * k - 30 * k * arm, hy = y - 40 * k - 34 * k * arm;
+  for (int i = 0; i <= 4; i++) {
+    float f = i / 4.0f;
+    s.fillCircle(x - 14 * k + (hx - (x - 14 * k)) * f, y - 50 * k + (hy - (y - 50 * k)) * f, 6 * k, fur, a);
+  }
+  s.fillCircle(hx, hy, 7.5f * k, face, a);                                  // palm
+  s.fillCircle(x, y - 70 * k, 17 * k, fur, a);                              // head
+  s.fillTriangle((int16_t)(x - 14 * k), (int16_t)(y - 76 * k), (int16_t)(x + 12 * k), (int16_t)(y - 78 * k),
+                 (int16_t)(x + 1 * k), (int16_t)(y - 98 * k), fur, a);  // the Bigfoot crest
+  s.fillTriangle((int16_t)(x - 16 * k), (int16_t)(y - 60 * k), (int16_t)(x - 22 * k), (int16_t)(y - 50 * k),
+                 (int16_t)(x - 14 * k), (int16_t)(y - 50 * k), fur, a);  // shaggy shoulders
+  s.fillTriangle((int16_t)(x + 16 * k), (int16_t)(y - 60 * k), (int16_t)(x + 22 * k), (int16_t)(y - 50 * k),
+                 (int16_t)(x + 14 * k), (int16_t)(y - 50 * k), fur, a);
+  s.fillRoundRect((int16_t)(x - 11 * k), (int16_t)(y - 72 * k), (int16_t)(22 * k), (int16_t)(16 * k), (int16_t)(7 * k), face, a);
+  s.fillRoundRect((int16_t)(x - 14 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
+  s.fillRoundRect((int16_t)(x + 2 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
+  s.fillRect((int16_t)(x - 2 * k), (int16_t)(y - 76 * k), (int16_t)(4 * k), (int16_t)(2 * k), lens, a);
+  s.line((int16_t)(x - 12 * k), (int16_t)(y - 77 * k), (int16_t)(x - 8 * k), (int16_t)(y - 77 * k), kMagenta, a);  // shine
+  s.line((int16_t)(x - 4 * k), (int16_t)(y - 62 * k), (int16_t)(x + 4 * k), (int16_t)(y - 61 * k), dark, a);       // grin
+}
+
+void drawSquachVisit(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  bool aura = o.value & 1;
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  float in = easeOut(t / 400.0f);
+  uint8_t A = a8(255 * in);
+  // synthwave sunset
+  s.fillRect(0, 0, W, H, 0x0000, a8(235 * in));
+  s.gradientV(0, 34, W, 112, hex(0x1A0B33), hex(0x8A1E6E), A);
+  uint16_t sunTop = hex(0xFFD54A), sunBot = hex(0xFF4FD8);
+  for (int i = 0; i < 46; i++) {  // the sun, in horizontal bands with gaps
+    int16_t y = (int16_t)(100 + i);
+    if (i > 22 && (i % 6) < 2) continue;
+    float dy = 46 - i;
+    int16_t half = (int16_t)sqrtf(46.0f * 46 - dy * dy);
+    s.hline(W / 2 - half, y, half * 2, gfx::mix(sunTop, sunBot, (uint8_t)(i * 5)), A);
+  }
+  s.fillRect(0, 146, W, H - 146, hex(0x12061F), A);
+  uint16_t grid = hex(0xFF4FD8);
+  float scroll = (now % 1000) / 1000.0f;
+  for (int i = 0; i < 6; i++) {  // horizon grid, scrolling towards us
+    float f = (i + scroll) / 6.0f;
+    s.hline(0, (int16_t)(146 + f * f * 60), W, grid, a8(150 * in));
+  }
+  for (int i = -6; i <= 6; i++) s.line(W / 2 + i * 12, 146, W / 2 + i * 70, 206, grid, a8(110 * in));
+  // the meeting: they walk in, high five at ~1.6 s, then hang out
+  float walk = clampf(t / 1200.0f, 0, 1);
+  float gx = 40 + 64 * easeOut(walk), sx = 290 - 82 * easeOut(walk);
+  float arm = clampf((t - 900) / 500.0f, 0, 1) * (t < 3600 ? 1.0f : clampf(1 - (t - 3600) / 400.0f, 0, 1));
+  if (aura) {  // the Legend's aura: he earned it
+    float fl = 0.6f + 0.4f * sinf(now / 90.0f);
+    s.glow(sx, 150, 56, hex(0xFF7A1F), a8(120 * fl * in));
+    s.glow(sx, 135, 34, hex(0xFFD54A), a8(90 * fl * in));
+  }
+  drawSquatch(s, sx, 200, 1.05f, arm, A);
+  Companion::Look look;
+  look.scale = 0.8f;
+  look.aura = false;
+  look.alpha = A;
+  Companion::drawGoblin(s, (int16_t)gx, 202, now, CState::Excited, look);
+  if (t > 1500 && t < 2300) {  // high five!
+    float b = (t - 1500) / 800.0f;
+    s.glow(gx + 44, 108, 30 * (1 - b) + 10, kGoldC, a8(200 * (1 - b)));
+    for (int i = 0; i < 6; i++) {
+      float ang = i * kPi / 3;
+      icon(s, Glyph::Star, (int16_t)(gx + 44 + cosf(ang) * 34 * b), (int16_t)(108 + sinf(ang) * 34 * b), 9, kGoldC,
+           a8(255 * (1 - b)));
+    }
+  }
+  s.textCentered(fBig(), W / 2, 4, "SQUATCH SIGHTING!", kMagenta, A);
+  char b[48];
+  if (o.text[0]) snprintf(b, sizeof(b), "%.12s says hi!", o.text);  // SquachMesh names are <= 12
+  else snprintf(b, sizeof(b), "A SquachWatch says hi!");
+  s.textCentered(fBody(), W / 2, 210, b, kText, A);
+  snprintf(b, sizeof(b), "+%lu XP%s", (unsigned long)xp, aura ? "  -  a Legend, no less" : "");
+  s.textCentered(fSmall(), W / 2, 228, b, kAmber, A);
 }
 
 // ---- Hacker gear scenes (loot::Hacker) --------------------------------------------------------
@@ -1619,6 +1714,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
     case OvType::Loot: drawLootFind(s, o, t, m.now); break;
     case OvType::Hacker: drawHackerOverlay(s, o, t, m.now); break;
+    case OvType::Squach: drawSquachVisit(s, o, t, m.now); break;
   }
 }
 
@@ -2321,6 +2417,9 @@ void onEvent(const UiEvent& e, uint32_t now) {
       break;
     case EventType::Hacker:
       overlay(OvType::Hacker);
+      break;
+    case EventType::Squach:
+      overlay(OvType::Squach);
       break;
     case EventType::TrackerAlert:
       // Jumps the queue: safety first, celebrations can wait.

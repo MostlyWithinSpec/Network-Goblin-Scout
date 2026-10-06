@@ -91,6 +91,8 @@ class Engine {
   uint32_t lootFind(const loot::Find& f, bool ble);  // count it, remember the best of the scan; returns XP
   int flushBest();                           // best find's rarity (-1 none); rare+ -> overlay event
   void spotHacker(uint8_t h);
+  uint32_t squachAtMs_ = 0;
+  void squachVisit(const Sighting& s);
 
   static const size_t kNearby = 6;
   NearbyPeer nearby_[kNearby];

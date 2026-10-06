@@ -256,6 +256,11 @@ Nearby Action / Swift Pair adverts from rotating addresses in one scan; a heuris
 Regenerate the table: `python3 tools/gen_oui.py oui.txt companies.py > src/core/LootData.inc`
 (standards-oui.ieee.org was blocked in the sandbox; `pip download netaddr bluetooth-numbers` ship copies:
 netaddr/eui/oui.txt and bluetooth_numbers/_companies.py).
+v0.6.2 (compiles; untested on hardware): SquachWatch visits. Their SquachMesh hello (BLE company 0xFFFF,
+"SQM1", version 1, appearance word, flags 0, optional 12-char name; decoded in social/SquachVisit.h from
+their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing, never
+their sprite unless the author permits), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
+(Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
 Ideas from the owner, not started: Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
 SquachWatch interop (share our beacon format) and a rotating beacon id (the stable goblin id in the beacon is
 trackable; the encounter cross-check depends on it).

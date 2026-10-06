@@ -33,6 +33,7 @@ BRANDS = [
     ("pwnagotchi", "Pwnagotchi", "HACKER", None, None),
     ("pineapple", "Pineapple", "HACKER", None, None),
     ("deauther", "Deauther", "HACKER", None, None),
+    ("squachwatch", "SquachWatch", "HACKER", None, None),  # a visiting SquachWatch (SquachMesh advert)
 
     # ISP gateways
     ("linksys", "Linksys", "HOME", None, r"linksys"),

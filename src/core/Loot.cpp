@@ -13,7 +13,7 @@ static_assert(sizeof(kBrands) / sizeof(kBrands[0]) <= 224, "widen Stats::kMaxBra
 namespace {
 // Pseudo-brands: the first entries of kBrands (tools/gen_oui.py)
 const uint16_t B_MYSTERY = 0, B_ODD = 1, B_HOTSPOT = 2, B_DIRECT = 3, B_SMARTTV = 4, B_FASTPAIR = 5;
-const uint16_t B_FLIPPER = 6, B_PWNAGOTCHI = 7, B_PINEAPPLE = 8, B_DEAUTHER = 9;
+const uint16_t B_FLIPPER = 6, B_PWNAGOTCHI = 7, B_PINEAPPLE = 8, B_DEAUTHER = 9, B_SQUACH = 10;
 
 const uint8_t kKindRarity[K_COUNT] = {
     R_COMMON,    // mystery
@@ -141,6 +141,7 @@ Find classifyBle(const BleInfo& in) {
   uint16_t b = kNone;
   uint8_t kind = 0xFF;
   if (hackerOfBle(in) == H_FLIPPER) b = B_FLIPPER;
+  if (in.squach) b = B_SQUACH;
   if (b == kNone && in.hasCompany) b = brandOfCompany(in.company);
   if (in.tracker) kind = K_TRACKER;
   if (b == kNone && in.tracker) {

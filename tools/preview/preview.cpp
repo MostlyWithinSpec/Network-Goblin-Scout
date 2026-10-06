@@ -223,6 +223,13 @@ int main() {
       run(5000);
     }
   }
+  ui::onEvent(ev(EventType::Squach, 0u | 40u << 16, "Bigfoot"), now);
+  run(1800); save("19f_squach_highfive");
+  run(1500); save("19g_squach_hangout");
+  run(4000);
+  ui::onEvent(ev(EventType::Squach, 1u | 40u << 16, ""), now);
+  run(2600); save("19h_squach_legend");
+  run(5000);
   ui::debugShow(0, 0);
   model.scanning = nullptr;
   ui::pet().setBase(CState::Sleeping);

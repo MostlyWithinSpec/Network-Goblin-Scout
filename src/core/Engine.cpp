@@ -204,7 +204,9 @@ void Engine::processBle(const Sighting& s) {
   bi.flipperSvc = s.flags & sflag::kFlipper;
   bi.iBeacon = s.flags & sflag::kIBeacon;
   bi.name = s.name;
-  uint8_t h = loot::hackerOfBle(bi);
+  bi.squach = s.flags & sflag::kSquach;
+  if (bi.squach) squachVisit(s);
+  uint8_t h = bi.squach ? loot::H_NONE : loot::hackerOfBle(bi);  // a Squachy named "Flipper X" is still a Squachy
   if (h != loot::H_NONE) spotHacker(h);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
@@ -544,6 +546,20 @@ void Engine::spotHacker(uint8_t h) {
   stats_.hackerMask |= 1u << h;
   addXp(XP_HACKER_SPOT);
   push(EventType::Hacker, h | (uint32_t)XP_HACKER_SPOT << 16, loot::hackerName(h));
+  saveSoon_ = true;
+}
+
+// A SquachWatch (another passive-radio pet, github.com/skizzophrenic/SquachWatch-CYD) said hello
+// over SquachMesh: the goblin and its Squachy high-five. Only seen when its owner has switched
+// SquachMesh "transmit" on.
+void Engine::squachVisit(const Sighting& s) {
+  uint32_t now = millis();
+  if (squachAtMs_ && now - squachAtMs_ < SQUACH_COOLDOWN_MS) return;
+  squachAtMs_ = now ? now : 1;
+  stats_.squachVisits++;
+  addXp(XP_SQUACH_VISIT);
+  push(EventType::Squach, (s.peerHoard ? 1u : 0u) | (uint32_t)XP_SQUACH_VISIT << 16, s.name);
+  feed(-30, -60);  // great company
   saveSoon_ = true;
 }
 

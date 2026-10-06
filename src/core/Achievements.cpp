@@ -198,6 +198,10 @@ const AchievementDef ACHIEVEMENTS[] = {
     A("hacker_bingo", "Hacker Bingo", "Spot all five kinds of hacker gear", kLegendary, Trophy, true,
       s.hackerMask == (1u << loot::H_COUNT) - 1),
     A("con_season", "Con Season", "Spot hacker gear 25 times", kGold, Trophy, false, s.hackerSpots >= 25),
+
+    // ---- v0.6.2: SquachWatch visits (ids 142-143) ------------------------------------------
+    A("bigfoot_sighting", "Bigfoot Sighting", "Get a visit from a SquachWatch", kGold, Paw, true, s.squachVisits >= 1),
+    A("squad_goals", "Squad Goals", "10 SquachWatch visits", kLegendary, Paw, true, s.squachVisits >= 10),
 };
 
 #undef A
