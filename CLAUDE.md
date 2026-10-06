@@ -231,6 +231,10 @@ goblin, new goblins capped at 5/IP/day and 500/day (IP stored only as a daily sa
 200k XP and other implausible numbers shadow-hide the goblin, rude names masked as "Goblin xxxx". Owner is on
 Cloudflare's Free plan: over-limit requests fail, nothing is billed. Unhide a wrongly hidden goblin in the D1
 console: `UPDATE goblins SET hidden = 0, hidden_why = NULL WHERE key = '...'`.
+Consistency hides (level/xp, wifi ratios, ratios, loot) are re-checked on every sync and heal when the
+numbers add up; "first sync xp", "xp too fast" and reasons typed by hand stick. Loot check = finds <=
+wifi + ble + brands x 22 (BLE finds count since v0.6.1; the Wi-Fi-only check hid the owner's goblin).
+See why a goblin is hidden: `SELECT name, hidden, hidden_why FROM goblins WHERE hidden = 1`.
 v0.5.2 (confirmed on hardware, on the web flasher): encounter cross-check. Engine remembers beacon ids of goblins met
 (last 200, /scout/met.txt, from v0.5.2 on); sync sends `gid` + `met`; the server counts a meeting only when
 both goblins report each other (`met_ok`, used by the goblins-met board). Beacon id squatting is ignored
