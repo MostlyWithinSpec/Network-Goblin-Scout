@@ -68,6 +68,16 @@ int main() {
   for (int c : {1, 2, 3, 4, 6, 8, 11, 36, 40, 44, 48, 52, 100, 112, 149, 157, 161}) stats.channels.set(c);
   for (int c : {11, 15, 20, 25}) stats.channels154.set(c);
   for (int i = 0; i < 37; i++) stats.achieved.set((i * 7) % ACHIEVEMENT_COUNT);
+  // Hoard Book: a spread of finds
+  stats.lootCommon = 812; stats.lootUncommon = 141; stats.lootRare = 23; stats.lootEpic = 3; stats.lootLegendary = 1;
+  for (const char* k : {"mystery", "odd", "netgear", "tplink", "arris", "sagemcom", "eero", "google", "meraki", "cisco",
+                        "aruba", "hp", "epson", "hotspot", "direct", "amazon", "sonos", "roku", "nintendo", "tesla",
+                        "ring", "espressif", "starlink"}) {
+    uint16_t b = loot::brandByKey(k);
+    stats.lootBrand[b] = 3 + (b * 37) % 90;
+    stats.lootBrands++;
+    stats.lootKinds |= 1u << loot::kBrands[b].kind;
+  }
   model.stats = &stats;
   model.settings = &settings;
   model.level = progression::levelForXp(stats.xp);
@@ -137,7 +147,7 @@ int main() {
   ui::pet().setBase(CState::Scanning);
   model.nearby[0] = &peer;
   model.nearbyCount = 1;
-  ui::onEvent(ev(EventType::NewWifi, 3, "3 new networks!"), now);
+  ui::onEvent(ev(EventType::NewWifi, 3, "3 new! Best: eero"), now);
   run(700);
   save("03_home_scanning_banner");
   run(3000);
@@ -182,7 +192,8 @@ int main() {
   model.hatMask = 0x1FFFF;  // all hats, to see the art
   ui::debugShow(3, 1); run(600); save("13_loot_wardrobe");
   model.hatMask = hats::unlockedMask(stats, model.level) | 0x1FF;
-  ui::debugShow(3, 2); run(600); save("14_loot_trophies");
+  ui::debugShow(3, 2); run(600); save("13b_loot_hoard_book");
+  ui::debugShow(3, 3); run(600); save("14_loot_trophies");
   ui::debugBadge(0); run(300); save("15_badge_detail");
   ui::debugBadge(-1);
   ui::debugShow(4, 0); run(600); save("16_setup");
@@ -191,6 +202,12 @@ int main() {
   ui::onEvent(ev(EventType::HatUnlocked, 4, "New hat: Propeller Cap!"), now);
   ui::debugShow(0, 0);
   run(1400); save("19_new_hat");
+  run(3000);
+  ui::onEvent(ev(EventType::LootFind, loot::R_EPIC | loot::K_SAT << 8 | 20u << 16, "Starlink"), now);
+  run(900); save("19b_loot_epic");
+  run(3000);
+  ui::onEvent(ev(EventType::LootFind, loot::R_LEGENDARY | loot::K_BIZ << 8 | 50u << 16, "Cisco Meraki"), now);
+  run(900); save("19c_loot_legendary");
   run(3000);
   ui::debugShow(0, 0);
   model.scanning = nullptr;

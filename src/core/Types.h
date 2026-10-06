@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <bitset>
+#include "Loot.h"
 
 // Values are mixed into stored ids: never renumber. (Thread = any 802.15.4, incl. Zigbee;
 // its tag is also used for exploration-cell ids.)
@@ -64,7 +65,8 @@ struct Sighting {
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
   X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
-  X(nightMin) X(seasonMask) X(syncs)
+  X(nightMin) X(seasonMask) X(syncs)                                                     \
+  X(lootCommon) X(lootUncommon) X(lootRare) X(lootEpic) X(lootLegendary)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -84,7 +86,13 @@ struct Stats {
   int8_t worstRssi = 0;         // weakest Wi-Fi signal ever (0 = none yet)
   std::bitset<200> channels;    // Wi-Fi channels seen, indexed by channel number
   std::bitset<27> channels154;  // 802.15.4 channels seen (11-26)
-  std::bitset<128> achieved;
+  std::bitset<256> achieved;
+
+  // Hoard Book (core/Loot.h): finds per brand, saved by brand key in state.json
+  static const uint16_t kMaxBrands = 224;
+  uint32_t lootBrand[kMaxBrands] = {};
+  uint16_t lootBrands = 0;      // brands with at least one find
+  uint32_t lootKinds = 0;       // bit per loot::Kind found
 
   // This power-on session (not persisted)
   uint32_t sessWifiNew = 0;
@@ -115,7 +123,8 @@ struct Settings {
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced,
+  LootFind  // value = rarity | kind << 8 | xp << 16, text = brand name
 };
 
 struct UiEvent {

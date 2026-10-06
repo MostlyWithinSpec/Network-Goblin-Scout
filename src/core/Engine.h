@@ -81,6 +81,10 @@ class Engine {
   uint64_t scanTop_[trackers::PlaceTracker::kFp] = {};  // strongest networks in this Wi-Fi scan
   int8_t scanTopRssi_[trackers::PlaceTracker::kFp] = {};
   size_t scanTopN_ = 0;
+  loot::Find best_{};         // rarest find of this Wi-Fi scan (for the banner / rare-find overlay)
+  uint32_t bestXp_ = 0;
+  bool haveBest_ = false;
+  void addLoot(const loot::Find& f);
 
   static const size_t kNearby = 6;
   NearbyPeer nearby_[kNearby];

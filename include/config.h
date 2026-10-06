@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.5.2"
+#define NG_FW_VERSION           "0.6.0"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -53,8 +53,7 @@
 #define GEO_CELL_DEG            0.05       // ~5.5 km "exploration cell"
 
 // ---- XP rules -------------------------------------------------------------
-#define XP_NEW_NETWORK          1
-#define XP_NEW_ENTERPRISE       5
+#define XP_NEW_NETWORK          1          // more of a name we have; new finds: loot::xp(rarity) 1-50
 #define XP_NEW_CHANNEL          10
 #define XP_NEW_CELL             20
 #define XP_DAILY_BONUS          50

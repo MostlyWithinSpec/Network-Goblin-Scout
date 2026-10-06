@@ -69,6 +69,17 @@ int main() {
   now += 2500;
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
   bench_mark(8);
+  now += 6000;
+  bench_mark(9);  // legendary loot overlay, 3 frames
+  ui::onEvent(ev(EventType::LootFind, loot::R_LEGENDARY | loot::K_BIZ << 8 | 50u << 16), now);
+  now += 1200;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(10);
+  now += 4000;
+  bench_mark(11);  // hoard book, 3 frames
+  ui::debugShow(3, 2);
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(12);
   bench_done();
   return 0;
 }

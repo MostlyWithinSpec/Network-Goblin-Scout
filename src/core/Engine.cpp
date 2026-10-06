@@ -122,9 +122,11 @@ void Engine::processWifi(const Sighting& s) {
 
   uint64_t ssidId = 0;
   size_t nameLen = strnlen(s.name, 32);
+  bool ssidNew = false;
   if (nameLen) {
     ssidId = id(Radio::WiFi, (const uint8_t*)s.name, nameLen) ^ 0x5353494400000000ULL;
-    if (ssids_.add(ssidId, "")) stats_.ssidUnique++;
+    ssidNew = ssids_.add(ssidId, "");
+    if (ssidNew) stats_.ssidUnique++;
   }
 
   uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
@@ -168,7 +170,28 @@ void Engine::processWifi(const Sighting& s) {
     case AuthCat::Enterprise: stats_.wifiEnterprise++; break;
     default: break;
   }
-  addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK, true);
+  // Loot: what kind of thing this is and how rare (core/Loot.h). The address and name are only
+  // looked at here, never kept. A name we already have (another access point of the same office
+  // or chain) is more of the same: plain XP, no find. Hidden networks get no setup bonus, so
+  // an office full of hidden access points can't be farmed.
+  uint32_t xp = XP_NEW_NETWORK;
+  if (!nameLen || ssidNew) {
+    loot::WifiTraits tr;
+    if (nameLen) {
+      tr.open = s.auth == AuthCat::Open;
+      tr.wep = s.auth == AuthCat::WEP;
+      tr.enterprise = s.auth == AuthCat::Enterprise;
+    }
+    loot::Find f = loot::classifyWifi(s.mac, s.name, tr);
+    addLoot(f);
+    xp = loot::xp(f.rarity);
+    if (!haveBest_ || f.rarity > best_.rarity) {
+      best_ = f;
+      bestXp_ = xp;
+      haveBest_ = true;
+    }
+  }
+  addXp(xp, true);
   feed(-15, -4);
 }
 
@@ -379,11 +402,21 @@ void Engine::endScan(Radio radio, uint32_t seenThisScan) {
     scanTopN_ = 0;
     stats_.lastScanSeen = seenThisScan;
     if (seenThisScan > stats_.maxApsInScan) stats_.maxApsInScan = seenThisScan;
-    if (batchWifiNew) {
-      snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
+    if (haveBest_ && best_.rarity >= loot::R_RARE) {
+      // a rare find gets its own overlay; the rest of the batch rides along quietly
+      snprintf(t, sizeof(t), "%s", loot::kBrands[best_.brand].name);
+      push(EventType::LootFind, best_.rarity | (uint32_t)best_.kind << 8 | (bestXp_ & 0xFFFF) << 16, t);
+    } else if (batchWifiNew) {
+      if (haveBest_ && batchWifiNew == 1)
+        snprintf(t, sizeof(t), "%s! %s", loot::kBrands[best_.brand].name, loot::rarityName(best_.rarity));
+      else if (haveBest_)
+        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchWifiNew, loot::kBrands[best_.brand].name);
+      else
+        snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
       push(EventType::NewWifi, batchWifiNew, t);
     }
     batchWifiNew = 0;
+    haveBest_ = false;
   } else if (radio == Radio::BLE) {
     stats_.lastBleSeen = seenThisScan;
     if (seenThisScan > stats_.maxBleInScan) stats_.maxBleInScan = seenThisScan;
@@ -458,6 +491,19 @@ void Engine::updateLocation() {
 }
 
 // ---------------------------------------------------------------------------
+void Engine::addLoot(const loot::Find& f) {
+  switch (f.rarity) {
+    case loot::R_COMMON: stats_.lootCommon++; break;
+    case loot::R_UNCOMMON: stats_.lootUncommon++; break;
+    case loot::R_RARE: stats_.lootRare++; break;
+    case loot::R_EPIC: stats_.lootEpic++; break;
+    default: stats_.lootLegendary++; break;
+  }
+  if (f.brand < Stats::kMaxBrands && stats_.lootBrand[f.brand]++ == 0) stats_.lootBrands++;
+  stats_.lootKinds |= 1u << f.kind;
+  if (f.rarity >= loot::R_RARE) saveSoon_ = true;
+}
+
 void Engine::addXp(uint32_t xp, bool discovery) {
   // A happy goblin (fed and entertained) earns +25% on discoveries.
   if (discovery && mood() == Mood::Happy) {
@@ -648,6 +694,10 @@ void Engine::saveNow() {
     o["d"] = q.done;
   }
 
+  JsonObject dex = doc["dex"].to<JsonObject>();  // Hoard Book: finds per brand key
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++)
+    if (stats_.lootBrand[i]) dex[loot::kBrands[i].key] = stats_.lootBrand[i];
+
   JsonArray ach = doc["achievements"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
     if (stats_.achieved[i]) ach.add(ACHIEVEMENTS[i].id);
@@ -703,6 +753,15 @@ void Engine::loadState() {
   for (JsonVariant v : doc["channels154"].as<JsonArray>()) {
     int c = v.as<int>();
     if (c >= 11 && c <= 26) stats_.channels154.set(c);
+  }
+  for (JsonPair kv : doc["dex"].as<JsonObject>()) {
+    uint16_t b = loot::brandByKey(kv.key().c_str());
+    if (b == loot::kNone || b >= Stats::kMaxBrands) continue;  // a brand from a newer firmware
+    stats_.lootBrand[b] = kv.value() | 0u;
+    if (stats_.lootBrand[b]) {
+      stats_.lootBrands++;
+      stats_.lootKinds |= 1u << loot::kBrands[b].kind;
+    }
   }
   for (JsonVariant v : doc["achievements"].as<JsonArray>()) {
     const char* key = v.as<const char*>();

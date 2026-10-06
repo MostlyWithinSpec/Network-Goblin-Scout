@@ -42,7 +42,7 @@ Companion companion;
 
 Screen screen = Screen::Home;
 int statsPage = 0;
-int lootPage = 0;              // 0 quests, 1 wardrobe, 2.. trophies
+int lootPage = 0;              // 0 quests, 1 wardrobe, 2 hoard book, 3.. trophies
 int badgeDetail = -1;
 uint32_t screenChangedAt = 0;
 int8_t slideDir = 0;          // -1 / +1 = content slides in from the left / right
@@ -79,7 +79,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -566,7 +566,8 @@ void drawStats(gfx::Surface& s, const UiModel& m) {
 // Badges
 const int kPerPage = 18;
 int trophyPages() { return (int)((ACHIEVEMENT_COUNT + kPerPage - 1) / kPerPage); }
-int lootPages() { return 2 + trophyPages(); }  // quests, wardrobe, trophies...
+const int kTrophyPage0 = 3;  // quests, wardrobe, hoard book, then trophies
+int lootPages() { return kTrophyPage0 + trophyPages(); }
 
 void cellCenter(int i, int16_t& cx, int16_t& cy) {
   int col = i % 6, row = i / 6;
@@ -636,7 +637,7 @@ void drawBadges(gfx::Surface& s, const UiModel& m) {
   s.text(fTitle(), 12, kBodyY + 6, "TROPHIES", kCyan);
   s.textRight(fBody(), W - 12, kBodyY + 1, hdr, kText);
   bar(s, 112, kBodyY + 10, 110, 6, (float)st.achieved.count() / ACHIEVEMENT_COUNT, kGoldC);
-  int first = (lootPage - 2) * kPerPage;
+  int first = (lootPage - kTrophyPage0) * kPerPage;
   for (int i = 0; i < kPerPage && first + i < (int)ACHIEVEMENT_COUNT; i++) {
     int16_t cx, cy;
     cellCenter(i, cx, cy);
@@ -724,9 +725,56 @@ void drawWardrobe(gfx::Surface& s, const UiModel& m) {
   }
 }
 
+// Loot rarity colours: grey, green, blue, violet, then a shimmering gold for legendary.
+uint16_t rarityColor(uint8_t r, uint32_t now) {
+  switch (r) {
+    case loot::R_COMMON: return kSilverC;
+    case loot::R_UNCOMMON: return kGreen;
+    case loot::R_RARE: return kBlue;
+    case loot::R_EPIC: return kViolet;
+    default: return gfx::mix(kGoldC, kAmber, (uint8_t)(128 + 127 * sinf(now / 300.0f)));
+  }
+}
+
+// Hoard Book: finds by rarity, and how many of each kind of loot (brands collected in brackets).
+void drawHoardBook(gfx::Surface& s, const UiModel& m) {
+  const Stats& st = *m.stats;
+  s.text(fTitle(), 12, kBodyY + 6, "HOARD BOOK", kCyan);
+  char b[40];
+  snprintf(b, sizeof(b), "%u / %u brands", (unsigned)st.lootBrands, (unsigned)loot::kBrandCount);
+  s.textRight(fSmall(), W - 12, kBodyY + 4, b, kDim);
+  const uint32_t byRarity[loot::R_COUNT] = {st.lootCommon, st.lootUncommon, st.lootRare, st.lootEpic, st.lootLegendary};
+  static const char* const kShort[loot::R_COUNT] = {"Common", "Uncomm.", "Rare", "Epic", "Legend"};
+  for (int r = 0; r < loot::R_COUNT; r++) {
+    int16_t x = 8 + r * 61, y = kBodyY + 22;
+    uint16_t c = rarityColor((uint8_t)r, m.now);
+    bool any = byRarity[r] > 0;
+    s.fillRoundRect(x, y, 57, 30, 6, kPanel, 230);
+    s.roundRect(x, y, 57, 30, 6, any ? c : kEdge, any ? 220 : 120);
+    s.textCentered(fSmall(), x + 28, y + 2, kShort[r], any ? c : kFaint);
+    snprintf(b, sizeof(b), "%lu", (unsigned long)byRarity[r]);
+    s.textCentered(fSmall(), x + 28, y + 15, b, any ? kText : kFaint);
+  }
+  // kinds, two columns, finds per kind added up from the brand counts on the fly (cheap)
+  uint32_t finds[loot::K_COUNT] = {};
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++) finds[loot::kBrands[i].kind] += st.lootBrand[i];
+  for (int k = 0; k < loot::K_COUNT; k++) {
+    int16_t x = 8 + (k % 2) * 154, y = kBodyY + 57 + (k / 2) * 12;
+    bool got = finds[k] > 0;
+    uint16_t c = rarityColor(loot::kindRarity((uint8_t)k), m.now);
+    s.fillRect(x, y + 2, 3, 9, c, got ? 255 : 70);
+    s.text(fSmall(), x + 7, y - 1, got ? loot::kindName((uint8_t)k) : "???", got ? kText : kFaint);
+    if (got) {
+      snprintf(b, sizeof(b), "%lu", (unsigned long)finds[k]);
+      s.textRight(fSmall(), x + 146, y - 1, b, kDim);
+    }
+  }
+}
+
 void drawLoot(gfx::Surface& s, const UiModel& m) {
   if (lootPage == 0) drawQuests(s, m);
   else if (lootPage == 1) drawWardrobe(s, m);
+  else if (lootPage == 2) drawHoardBook(s, m);
   else drawBadges(s, m);
   pageDots(s, lootPage, lootPages(), kBodyY + kBodyH - 6);
 }
@@ -1115,6 +1163,7 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
 uint32_t overlayLength(OvType t) {
   if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
   if (t == OvType::Sniff) return 5000;
+  if (t == OvType::Loot) return 3400;
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1158,7 +1207,41 @@ void startOverlay(uint32_t now) {
       sfx(kSfxAlert);
       led(80, 0, 0, 3000);
       break;
+    case OvType::Loot: {
+      uint8_t r = (uint8_t)(o.value & 0xFF);
+      uint16_t c = rarityColor(r, now);
+      emit(r >= loot::R_LEGENDARY ? PKind::Confetti : PKind::Spark, W / 2, 96, 20 + 10 * r, c, 140, 1.6f);
+      sfx(r >= loot::R_LEGENDARY ? kSfxLevelUp : kSfxAchievement);
+      led(r >= loot::R_EPIC ? 60 : 10, r >= loot::R_LEGENDARY ? 50 : 10, r >= loot::R_LEGENDARY ? 0 : 60, 900);
+      companion.react(CState::Excited, 2500, now);
+      break;
+    }
   }
+}
+
+void drawLootFind(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t r = (uint8_t)(o.value & 0xFF), kind = (uint8_t)((o.value >> 8) & 0xFF);
+  uint32_t xp = o.value >> 16;
+  uint16_t c = rarityColor(r, now);
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, 0x0000, a8(225 * in));
+  rays(s, W / 2, 100, c, a8((15 + 8 * r) * in), now / 3000.0f);
+  static const char* const kTitle[loot::R_COUNT] = {"FIND!", "NICE FIND!", "RARE FIND!", "EPIC FIND!", "LEGENDARY!"};
+  s.textCentered(fBig(), W / 2, 16, r < loot::R_COUNT ? kTitle[r] : "FIND!", c, a8(255 * in));
+  float pop = easeBack((t - 150) / 450.0f);
+  if (pop > 0.05f) {
+    float k = clampf(pop, 0, 1.2f);
+    s.glow(W / 2, 100, 46 * k, c, a8(110 * clampf(pop, 0, 1)));
+    s.fillCircle(W / 2, 100, 30 * k, kPanel, a8(240 * clampf(pop, 0, 1)));
+    s.ring(W / 2, 100, 30 * k, 3, c, a8(255 * clampf(pop, 0, 1)));
+    icon(s, Glyph::Wifi, W / 2, 100, (int16_t)(32 * k), c, a8(255 * clampf(pop, 0, 1)));
+  }
+  s.textCentered(fBig(), W / 2, 142, o.text, kText, a8(255 * in));
+  char b[48];
+  snprintf(b, sizeof(b), "%s  -  %s", loot::rarityName(r), loot::kindName(kind));
+  s.textCentered(fSmall(), W / 2, 176, b, c, a8(255 * in));
+  snprintf(b, sizeof(b), "+%lu XP", (unsigned long)xp);
+  s.textCentered(fBody(), W / 2, 196, b, kAmber, a8(255 * in));
 }
 
 void drawLevelUp(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
@@ -1404,6 +1487,7 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
     case OvType::Tracker: drawTracker(s, o, t, m.now); break;
     case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
+    case OvType::Loot: drawLootFind(s, o, t, m.now); break;
   }
 }
 
@@ -1879,11 +1963,11 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         }
         break;
       }
-      if (lootPage < 2) break;
+      if (lootPage < kTrophyPage0) break;
       for (int i = 0; i < kPerPage; i++) {
         int16_t cx, cy;
         cellCenter(i, cx, cy);
-        int idx = (lootPage - 2) * kPerPage + i;
+        int idx = (lootPage - kTrophyPage0) * kPerPage + i;
         if (idx < (int)ACHIEVEMENT_COUNT && abs(x - cx) < 24 && abs(y - cy) < 24) { badgeDetail = idx; return; }
       }
       break;
@@ -2100,6 +2184,9 @@ void onEvent(const UiEvent& e, uint32_t now) {
       break;
     case EventType::SniffOff:
       overlay(OvType::Sniff);
+      break;
+    case EventType::LootFind:
+      overlay(OvType::Loot);
       break;
     case EventType::TrackerAlert:
       // Jumps the queue: safety first, celebrations can wait.
