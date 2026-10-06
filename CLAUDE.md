@@ -238,14 +238,14 @@ both goblins report each other (`met_ok`, used by the goblins-met board). Beacon
 Website extras (labs repo, server + pages): goblin of the week (last Monday-Sunday's biggest XP gain, hall
 of fame), profile wardrobe + trophy shelf + share button. Re-run `goblins.sh` and `web_data.py` and copy into
 the labs repo whenever hats or achievements change.
-v0.6.0 (CI build only so far; untested on hardware): loot rarity. New network -> brand from the BSSID's
+v0.6.0 (confirmed on hardware with v0.6.2): loot rarity. New network -> brand from the BSSID's
 OUI (IEEE registry, 10k OUIs, 154 brands in 18 kinds; random addresses use "DIRECT-"/"iPhone"/... SSID
 patterns) -> rarity (kind default, bumped by open/WEP/enterprise; open business AP or WEP = Legendary).
 XP 1/3/8/20/50, only for the first network with a given name (other APs of the same office/chain = 1 XP,
 no find), hidden networks get no setup bonus. Rare+ finds get an overlay; Hoard Book is Loot page 3
 (trophies moved to pages 4+). 10 achievements (133; bitset widened to 256). Sync sends loot counts +
 brands; server has a "legendary" board and hides goblins with more finds than networks.
-v0.6.1 (compiles in CI; untested on hardware): Bluetooth loot + hacker gear. BLE brand from the advert's
+v0.6.1 (confirmed on hardware with v0.6.2): Bluetooth loot + hacker gear. BLE brand from the advert's
 company id (Bluetooth SIG list; Flipper 0x0E29 added by hand), Apple split by Continuity type (0x07 AirPods
 -> Audio, 0x09 -> TV, 0x12 -> Tracker, else Phone). New kinds Audio, Wearables, Trackers, Hacker gear (22).
 Stable-address BLE device = a find; rotating address = a find only for a new brand+kind ("species",
@@ -256,11 +256,15 @@ Nearby Action / Swift Pair adverts from rotating addresses in one scan; a heuris
 Regenerate the table: `python3 tools/gen_oui.py oui.txt companies.py > src/core/LootData.inc`
 (standards-oui.ieee.org was blocked in the sandbox; `pip download netaddr bluetooth-numbers` ship copies:
 netaddr/eui/oui.txt and bluetooth_numbers/_companies.py).
-v0.6.2 (compiles; untested on hardware): SquachWatch visits. Their SquachMesh hello (BLE company 0xFFFF,
+v0.6.2 (confirmed on hardware, on the web flasher; owner: "works perfect"): SquachWatch visits. Their SquachMesh hello (BLE company 0xFFFF,
 "SQM1", version 1, appearance word, flags 0, optional 12-char name; decoded in social/SquachVisit.h from
 their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing, never
 their sprite unless the author permits), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
 (Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
+Publishing a tested build: this sandbox can't download CI artifacts (api.github.com and the Azure blob
+host are blocked), so the owner uploaded firmware.bin + firmware.factory.bin from the CI run they tested
+into network-goblin-labs scout/flash/firmware/<version>/ via GitHub's web upload; then check them
+(version string, factory = same app at 0x10000) and point manifest.json / manifest-update.json / index.html at it.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
 whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
 v0.6.3 (compiles; untested on hardware): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
