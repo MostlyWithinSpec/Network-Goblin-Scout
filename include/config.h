@@ -1,7 +1,7 @@
 #pragma once
 // Tunables. Anything hardware-variant-specific that might need tweaking lives here.
 
-#define NG_FW_VERSION           "0.5.2"
+#define NG_FW_VERSION           "0.6.4"
 #define NG_DATA_DIR             "/scout"
 #define NG_SPRITE_DIR           "/sprites"
 
@@ -53,12 +53,10 @@
 #define GEO_CELL_DEG            0.05       // ~5.5 km "exploration cell"
 
 // ---- XP rules -------------------------------------------------------------
-#define XP_NEW_NETWORK          1
-#define XP_NEW_ENTERPRISE       5
+#define XP_NEW_NETWORK          1          // more of a name we have; new finds: loot::xp(rarity) 1-50
 #define XP_NEW_CHANNEL          10
 #define XP_NEW_CELL             20
 #define XP_DAILY_BONUS          50
-#define XP_NEW_BLE              1
 #define XP_ACHIEVEMENT          25         // x (1 + tier): bronze 25 ... legendary 100
 #define XP_NEW_154              2          // new 802.15.4 device
 #define XP_NEW_PAN              15         // new Zigbee/Thread network
@@ -69,6 +67,11 @@
 #define XP_SNIFF_DRAW           40
 #define XP_SNIFF_LOSE           20         // everyone gets something for showing up
 #define SNIFF_COOLDOWN_MS       (6UL * 60 * 60 * 1000)  // one sniff-off per goblin per 6 h
+#define XP_HACKER_SPOT          30         // spotted hacker gear (Flipper, Pwnagotchi...): each time, with a cooldown
+#define HACKER_COOLDOWN_MS      (30UL * 60 * 1000)  // per kind of gear: one reaction per 30 min
+#define BLE_SPAM_POPUPS         8          // popup adverts from different addresses in one BLE scan = spam
+#define XP_SQUACH_VISIT         40         // a SquachWatch said hello
+#define SQUACH_COOLDOWN_MS      (20UL * 60 * 1000)  // one greeting per 20 min
 
 // ---- Quests & needs -------------------------------------------------------
 #define QUEST_COOLDOWN_MIN      30         // minutes of scanning before a new board after clearing one

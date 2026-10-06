@@ -5,6 +5,7 @@
 #include <freertos/queue.h>
 #include "../core/Trackers.h"
 #include "../social/PeerCodec.h"
+#include "../social/SquachVisit.h"
 #include "config.h"
 
 // BLE callbacks run on the BLE host task, so they must NOT touch SPI (display/SD).
@@ -36,20 +37,36 @@ bool hasUuid16(const uint8_t* d, size_t dl, uint16_t uuid) {  // list of 16-bit 
 //   Samsung SmartTag: service data 0xFD5A    Tile: service 0xFEED / 0xFEEC
 //   Google Find My Device: Eddystone service data 0xFEAA with frame type 0x40 / 0x41
 //   Chipolo: service 0xFE33
-uint8_t inspect(const uint8_t* p, size_t len, peercodec::Info& peerOut, bool& isPeer, uint8_t& tracker) {
+//
+// For loot (core/Loot.h) it also notes the first manufacturer data's company id and the byte after
+// it, Google Fast Pair service data (0xFE2C) and Flipper Zero's service UUIDs (0x3081-0x3083).
+uint8_t inspect(const uint8_t* p, size_t len, peercodec::Info& peerOut, bool& isPeer, uint8_t& tracker,
+                uint16_t& company, uint8_t& msgType, squachvisit::Visitor& squach) {
   uint8_t flags = 0;
   isPeer = false;
   tracker = trackers::kNone;
+  company = 0;
+  msgType = 0;
   for (size_t i = 0; i + 1 < len;) {
     uint8_t n = p[i];
     if (n == 0 || i + 1 + n > len) break;
     uint8_t type = p[i + 1];
     const uint8_t* d = p + i + 2;
     size_t dl = n - 1;
+    if ((type == 0x02 || type == 0x03) &&
+        (hasUuid16(d, dl, 0x3081) || hasUuid16(d, dl, 0x3082) || hasUuid16(d, dl, 0x3083)))
+      flags |= sflag::kFlipper;
+    if (type == 0x16 && dl >= 2 && d[0] == 0x2C && d[1] == 0xFE) flags |= sflag::kFastPair;
+    if (type == 0xFF && dl >= 2 && !(flags & sflag::kCompany)) {
+      flags |= sflag::kCompany;
+      company = (uint16_t)(d[0] | d[1] << 8);
+      msgType = dl >= 3 ? d[2] : 0;
+    }
     if (type == 0xFF) {  // manufacturer specific
       if (dl >= 4 && d[0] == 0x4C && d[1] == 0x00 && d[2] == 0x02 && d[3] == 0x15) flags |= sflag::kIBeacon;
       if (dl >= 4 && d[0] == 0x4C && d[1] == 0x00 && d[2] == 0x12 && d[3] == 0x19) tracker = trackers::kFindMy;
       if (peercodec::decode(d, dl, peerOut)) isPeer = true;
+      if (dl > 2 && d[0] == 0xFF && d[1] == 0xFF && squachvisit::decode(d + 2, dl - 2, squach)) flags |= sflag::kSquach;
     } else if (type == 0x16 && dl >= 3 && d[0] == 0xAA && d[1] == 0xFE && (d[2] == 0x40 || d[2] == 0x41)) {
       tracker = trackers::kGoogle;
     } else if (type == 0x16 && dl >= 2 && d[0] == 0x5A && d[1] == 0xFD) {
@@ -80,7 +97,8 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
     peercodec::Info peer;
     bool isPeer = false;
     uint8_t tracker = 0;
-    s.flags = inspect(d.getPayload(), d.getPayloadLength(), peer, isPeer, tracker);
+    squachvisit::Visitor squach;
+    s.flags = inspect(d.getPayload(), d.getPayloadLength(), peer, isPeer, tracker, s.company, s.msgType, squach);
     if (isPeer) {
       // Another NG Scout. Identity is its goblin id, not the (random, per-boot) address.
       s.radio = Radio::Peer;
@@ -98,6 +116,10 @@ class Callbacks : public BLEAdvertisedDeviceCallbacks {
     s.radio = Radio::BLE;
     s.tracker = tracker;
     if (d.haveName()) strlcpy(s.name, d.getName().c_str(), sizeof(s.name));
+    if (s.flags & sflag::kSquach) {
+      strlcpy(s.name, squach.name, sizeof(s.name));
+      s.peerHoard = squach.aura;
+    }
     // Address type 0 = public. For random addresses the top two bits of the
     // most significant byte are 0b11 for "static random" (stable until reboot of
     // the device); anything else is a rotating private address.

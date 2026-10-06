@@ -172,6 +172,13 @@ String buildBody() {
   c["uptimeMin"] = st.uptimeMin;
   c["batteryMin"] = st.batteryMin;
   c["nightMin"] = st.nightMin;
+  c["lootCommon"] = st.lootCommon;  // loot rarity: counts only, never which networks
+  c["lootUncommon"] = st.lootUncommon;
+  c["lootRare"] = st.lootRare;
+  c["lootEpic"] = st.lootEpic;
+  c["lootLegendary"] = st.lootLegendary;
+  c["brands"] = st.lootBrands;
+  c["hackers"] = st.hackerSpots;  // times hacker gear was spotted (no ids)
   JsonArray ach = d["ach"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
     if (st.achieved[i]) ach.add(ACHIEVEMENTS[i].id);

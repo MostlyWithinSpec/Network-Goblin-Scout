@@ -69,6 +69,38 @@ int main() {
   now += 2500;
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
   bench_mark(8);
+  now += 6000;
+  bench_mark(9);  // legendary loot overlay, 3 frames
+  ui::onEvent(ev(EventType::LootFind, loot::R_LEGENDARY | loot::K_BIZ << 8 | 50u << 16), now);
+  now += 1200;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(10);
+  now += 4000;
+  bench_mark(11);  // hoard book, 3 frames
+  ui::debugShow(3, 2);
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(12);
+  ui::debugShow(0, 0);
+  now += 4000;
+  bench_mark(13);  // hacker overlay: BLE popup storm (the busiest one), 3 frames
+  ui::onEvent(ev(EventType::Hacker, loot::H_BLESPAM | 30u << 16), now);
+  now += 1500;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(14);
+  now += 6000;
+  bench_mark(15);  // SquachWatch visit (sunset, grid, two characters), 3 frames
+  ui::onEvent(ev(EventType::Squach, 1u | 40u << 16), now);
+  now += 1600;
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(16);
+  ui::debugShow(0, 0);
+  settings.pet = 3;  // Pip & Lily on the home screen
+  now += 7000;
+  model.scanning = nullptr;
+  ui::pet().setBase(CState::Idle);
+  bench_mark(17);
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(18);
   bench_done();
   return 0;
 }

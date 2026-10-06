@@ -8,6 +8,7 @@
 #include "../core/Hats.h"
 #include "../core/Quests.h"
 #include "../core/Trackers.h"
+#include "PetArt.h"
 #include "../social/PeerCodec.h"
 #include "../social/Sniff.h"
 #include "HatArt.h"
@@ -42,7 +43,7 @@ Companion companion;
 
 Screen screen = Screen::Home;
 int statsPage = 0;
-int lootPage = 0;              // 0 quests, 1 wardrobe, 2.. trophies
+int lootPage = 0;              // 0 quests, 1 wardrobe, 2 hoard book, 3.. trophies
 int badgeDetail = -1;
 uint32_t screenChangedAt = 0;
 int8_t slideDir = 0;          // -1 / +1 = content slides in from the left / right
@@ -79,7 +80,7 @@ int bannerCount = 0;
 uint32_t bannerStart = 0;
 
 // Overlays (full-screen moments)
-enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff };
+enum class OvType : uint8_t { LevelUp, Achievement, Encounter, Hat, AchBatch, Tracker, Sniff, Loot, Hacker, Squach };
 struct Overlay {
   OvType type;
   uint32_t value;
@@ -408,6 +409,51 @@ void meter(gfx::Surface& s, int16_t x, int16_t y, Glyph g, const char* label, ui
   bar(s, x + 42, y + 2, 46, 5, full, full < 0.3f ? kRed : c);
 }
 
+// The goblin's pet(s), Setup > Pet. They follow the goblin's mood: ears up while it scans, a hop
+// when it finds something, curled up when it sleeps, and hearts when you pet the goblin.
+uint32_t pettedAt = 0;
+
+PetPose petPose(CState st) {
+  switch (st) {
+    case CState::Sleeping: return PetPose::Sleep;
+    case CState::Discovered:
+    case CState::Excited:
+    case CState::LevelUp:
+    case CState::Achievement:
+    case CState::SyncDone: return PetPose::Hop;
+    case CState::Scanning:
+    case CState::Searching:
+    case CState::Uploading: return PetPose::Alert;
+    default: return PetPose::Sit;
+  }
+}
+
+void drawPets(gfx::Surface& s, const UiModel& m) {
+  uint8_t pet = m.settings->pet & 3;
+  if (!pet) return;
+  PetPose pose = petPose(companion.state(m.now));
+  const float k = 0.95f;
+  const int16_t ground = kBodyY + kBodyH - 4;
+  bool both = pet == 3;
+  // Pip sits to the goblin's right, Lily in the corner on its left; asleep, they curl up together
+  float lilyX = both ? (pose == PetPose::Sleep ? 148 : 24) : 138, pipX = both && pose == PetPose::Sleep ? 124 : 138;
+  // a soft light behind each cat: dark fur on a dark screen needs it
+  float lift = pose == PetPose::Sleep ? 8 : 20;
+  if (pet & 2) s.glow(lilyX, ground - lift * 0.8f, 20, kCyan, 45);
+  if (pet & 1) s.glow(pipX, ground - lift, 24, kCyan, 45);
+  if (pet & 2) drawCat(s, kLily, lilyX, ground, k, m.now, pose, 2);
+  if (pet & 1) drawCat(s, kPip, pipX, ground, k, m.now, pose, 1);
+  if (pose == PetPose::Sleep && (m.now / 1200) % 2)
+    s.text(fSmall(), (int16_t)(both ? 152 : 148), (int16_t)(ground - 30), "z", kDim);
+  uint32_t since = m.now - pettedAt;
+  if (pettedAt && since < 1800) {  // purring
+    float f = since / 1800.0f;
+    uint8_t a = a8(255 * (1 - f));
+    if (pet & 1) icon(s, Glyph::Heart, (int16_t)(pipX + 6), (int16_t)(ground - 44 - f * 18), 8, kMagenta, a);
+    if (pet & 2) icon(s, Glyph::Heart, (int16_t)(lilyX + 5), (int16_t)(ground - 36 - f * 18), 7, kMagenta, a);
+  }
+}
+
 void drawHome(gfx::Surface& s, const UiModel& m) {
   const Stats& st = *m.stats;
   bool scanning = companion.state(m.now) == CState::Scanning;
@@ -422,6 +468,7 @@ void drawHome(gfx::Surface& s, const UiModel& m) {
   }
   const Frame* custom = m.packFrame ? m.packFrame(companion.state(m.now), m.now / 300) : nullptr;
   companion.draw(s, 80, 188, m.now, custom);
+  drawPets(s, m);
 
   meter(s, 6, kBodyY + 6, Glyph::Heart, "FOOD", m.hunger, kGreen);
   meter(s, 6, kBodyY + 18, Glyph::Star, "FUN", m.boredom, kAmber);
@@ -566,7 +613,8 @@ void drawStats(gfx::Surface& s, const UiModel& m) {
 // Badges
 const int kPerPage = 18;
 int trophyPages() { return (int)((ACHIEVEMENT_COUNT + kPerPage - 1) / kPerPage); }
-int lootPages() { return 2 + trophyPages(); }  // quests, wardrobe, trophies...
+const int kTrophyPage0 = 3;  // quests, wardrobe, hoard book, then trophies
+int lootPages() { return kTrophyPage0 + trophyPages(); }
 
 void cellCenter(int i, int16_t& cx, int16_t& cy) {
   int col = i % 6, row = i / 6;
@@ -636,7 +684,7 @@ void drawBadges(gfx::Surface& s, const UiModel& m) {
   s.text(fTitle(), 12, kBodyY + 6, "TROPHIES", kCyan);
   s.textRight(fBody(), W - 12, kBodyY + 1, hdr, kText);
   bar(s, 112, kBodyY + 10, 110, 6, (float)st.achieved.count() / ACHIEVEMENT_COUNT, kGoldC);
-  int first = (lootPage - 2) * kPerPage;
+  int first = (lootPage - kTrophyPage0) * kPerPage;
   for (int i = 0; i < kPerPage && first + i < (int)ACHIEVEMENT_COUNT; i++) {
     int16_t cx, cy;
     cellCenter(i, cx, cy);
@@ -724,9 +772,56 @@ void drawWardrobe(gfx::Surface& s, const UiModel& m) {
   }
 }
 
+// Loot rarity colours: grey, green, blue, violet, then a shimmering gold for legendary.
+uint16_t rarityColor(uint8_t r, uint32_t now) {
+  switch (r) {
+    case loot::R_COMMON: return kSilverC;
+    case loot::R_UNCOMMON: return kGreen;
+    case loot::R_RARE: return kBlue;
+    case loot::R_EPIC: return kViolet;
+    default: return gfx::mix(kGoldC, kAmber, (uint8_t)(128 + 127 * sinf(now / 300.0f)));
+  }
+}
+
+// Hoard Book: finds by rarity, and how many of each kind of loot (brands collected in brackets).
+void drawHoardBook(gfx::Surface& s, const UiModel& m) {
+  const Stats& st = *m.stats;
+  s.text(fTitle(), 12, kBodyY + 6, "HOARD BOOK", kCyan);
+  char b[40];
+  snprintf(b, sizeof(b), "%u / %u brands", (unsigned)st.lootBrands, (unsigned)loot::kBrandCount);
+  s.textRight(fSmall(), W - 12, kBodyY + 4, b, kDim);
+  const uint32_t byRarity[loot::R_COUNT] = {st.lootCommon, st.lootUncommon, st.lootRare, st.lootEpic, st.lootLegendary};
+  static const char* const kShort[loot::R_COUNT] = {"Common", "Uncomm.", "Rare", "Epic", "Legend"};
+  for (int r = 0; r < loot::R_COUNT; r++) {
+    int16_t x = 8 + r * 61, y = kBodyY + 22;
+    uint16_t c = rarityColor((uint8_t)r, m.now);
+    bool any = byRarity[r] > 0;
+    s.fillRoundRect(x, y, 57, 30, 6, kPanel, 230);
+    s.roundRect(x, y, 57, 30, 6, any ? c : kEdge, any ? 220 : 120);
+    s.textCentered(fSmall(), x + 28, y + 2, kShort[r], any ? c : kFaint);
+    snprintf(b, sizeof(b), "%lu", (unsigned long)byRarity[r]);
+    s.textCentered(fSmall(), x + 28, y + 15, b, any ? kText : kFaint);
+  }
+  // kinds, two columns, finds per kind added up from the brand counts on the fly (cheap)
+  uint32_t finds[loot::K_COUNT] = {};
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++) finds[loot::kBrands[i].kind] += st.lootBrand[i];
+  for (int k = 0; k < loot::K_COUNT; k++) {
+    int16_t x = 6 + (k % 3) * 104, y = kBodyY + 57 + (k / 3) * 12;
+    bool got = finds[k] > 0;
+    uint16_t c = rarityColor(loot::kindRarity((uint8_t)k), m.now);
+    s.fillRect(x, y + 2, 3, 9, c, got ? 255 : 70);
+    s.text(fSmall(), x + 7, y - 1, got ? loot::kindName((uint8_t)k) : "???", got ? kText : kFaint);
+    if (got) {
+      snprintf(b, sizeof(b), "%lu", (unsigned long)finds[k]);
+      s.textRight(fSmall(), x + 100, y - 1, b, kDim);
+    }
+  }
+}
+
 void drawLoot(gfx::Surface& s, const UiModel& m) {
   if (lootPage == 0) drawQuests(s, m);
   else if (lootPage == 1) drawWardrobe(s, m);
+  else if (lootPage == 2) drawHoardBook(s, m);
   else drawBadges(s, m);
   pageDots(s, lootPage, lootPages(), kBodyY + kBodyH - 6);
 }
@@ -888,8 +983,13 @@ void drawShare(gfx::Surface& s, const UiModel& m) {
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 14;
+const int kRows = 15;
 const int16_t kRowH = 38;
+
+// Rows by id (the ids are what the drawing and tap code switch on). kOrder is the order on screen:
+// the goblin and its online life first, then the radios, then display and odds and ends.
+const int kOrder[] = {14, 12, 9, 11, 2, 3, 4, 5, 0, 1, 13, 8, 7, 6, 10};
+static_assert(sizeof(kOrder) / sizeof(kOrder[0]) == 15, "every Setup row appears once");
 
 struct RowInfo { const char* label; const char* sub; };
 const RowInfo kRowInfo[kRows] = {
@@ -902,6 +1002,7 @@ const RowInfo kRowInfo[kRows] = {
     {"Invert colours", "if the screen looks negative"},
     {"Turbo display", "faster screen; off if it glitches"},
     {"Sprite pack", "from the SD card"},
+    {"Pet", "a sidekick for your goblin"},
     {"Touch test", "check calibration"},
     {"Share card", "show off your goblin"},
     {"Sync & leaderboard", nullptr},
@@ -928,12 +1029,13 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
   const Settings& st = *m.settings;
   if (!dragging) setupScroll += (setupScrollTarget - setupScroll) * clampf(dt * 12, 0, 1);
   s.setClip(0, kBodyY, W, kBodyH);
-  for (int i = 0; i < kRows; i++) {
-    int16_t y = (int16_t)(kBodyY + 4 + i * kRowH - setupScroll);
+  for (int slot = 0; slot < kRows; slot++) {
+    int16_t y = (int16_t)(kBodyY + 4 + slot * kRowH - setupScroll);
     if (y > kBodyY + kBodyH || y + kRowH < kBodyY) continue;
+    const int i = kOrder[slot];  // row id
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
-    if (i == 11) {
+    if (i == 12) {
       s.text(fBody(), 16, y + 1, r.label, kText);
       char b[48];
       if (m.syncSsid[0]) snprintf(b, sizeof(b), "via %s", m.syncSsid);
@@ -942,7 +1044,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
       continue;
     }
-    if (i == 12) {
+    if (i == 13) {
       s.text(fBody(), 16, y + 1, r.label, kText);
       char b[48];
       if (m.localTime) {
@@ -959,7 +1061,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
       continue;
     }
-    if (i == 13) {
+    if (i == 14) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
@@ -980,7 +1082,11 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     } else if (i == 8) {
       s.textRight(fSmall(), W - 34, y + 9, m.packName, kCyan);
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
-    } else if (i == 9 || i == 10) {
+    } else if (i == 9) {
+      static const char* const kPets[] = {"none", "Pip", "Lily", "Pip & Lily"};
+      s.textRight(fSmall(), W - 34, y + 9, kPets[st.pet & 3], st.pet ? kMagenta : kDim);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+    } else if (i == 10 || i == 11) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
     }
   }
@@ -1115,6 +1221,9 @@ void rays(gfx::Surface& s, float cx, float cy, uint16_t c, uint8_t a, float rot)
 uint32_t overlayLength(OvType t) {
   if (t == OvType::Tracker) return 180000;  // stays until answered (or 3 minutes)
   if (t == OvType::Sniff) return 5000;
+  if (t == OvType::Loot) return 3400;
+  if (t == OvType::Hacker) return 5200;
+  if (t == OvType::Squach) return 6000;
   return t == OvType::Encounter ? 5200 : t == OvType::LevelUp ? 3800 : t == OvType::Hat || t == OvType::AchBatch ? 3600 : 3300;
 }
 
@@ -1158,7 +1267,264 @@ void startOverlay(uint32_t now) {
       sfx(kSfxAlert);
       led(80, 0, 0, 3000);
       break;
+    case OvType::Loot: {
+      uint8_t r = (uint8_t)(o.value & 0xFF);
+      uint16_t c = rarityColor(r, now);
+      emit(r >= loot::R_LEGENDARY ? PKind::Confetti : PKind::Spark, W / 2, 96, 20 + 10 * r, c, 140, 1.6f);
+      sfx(r >= loot::R_LEGENDARY ? kSfxLevelUp : kSfxAchievement);
+      led(r >= loot::R_EPIC ? 60 : 10, r >= loot::R_LEGENDARY ? 50 : 10, r >= loot::R_LEGENDARY ? 0 : 60, 900);
+      companion.react(CState::Excited, 2500, now);
+      break;
+    }
+    case OvType::Hacker:
+      emit(PKind::Spark, W / 2, 96, 26, kGreen, 140, 1.4f);
+      sfx(kSfxEncounter);
+      led(0, 60, 10, 1500);
+      companion.react(CState::Excited, 5000, now);
+      break;
+    case OvType::Squach:
+      sfx(kSfxEncounter);
+      led(60, 0, 40, 2500);
+      companion.react(CState::Excited, 6000, now);
+      break;
   }
+}
+
+// ---- A SquachWatch visits ---------------------------------------------------------------------
+// Our own homage to SquachWatch's mascot (their art is theirs): a shades-wearing Bigfoot on a
+// synthwave sunset, high-fiving the goblin.
+void drawSquatch(gfx::Surface& s, float x, float y, float k, float arm, uint8_t a) {  // (x, y) = feet
+  uint16_t fur = hex(0x7A4A2A), dark = hex(0x553218), face = hex(0xC99A6E), lens = hex(0x16101F);
+  s.fillCircle(x - 9 * k, y - 4 * k, 8 * k, dark, a);                       // feet
+  s.fillCircle(x + 9 * k, y - 4 * k, 8 * k, dark, a);
+  s.fillRoundRect((int16_t)(x - 20 * k), (int16_t)(y - 62 * k), (int16_t)(40 * k), (int16_t)(58 * k), (int16_t)(16 * k), fur, a);
+  s.fillCircle(x - 21 * k, y - 34 * k, 7 * k, fur, a);                      // left arm, down
+  s.fillRoundRect((int16_t)(x - 26 * k), (int16_t)(y - 50 * k), (int16_t)(10 * k), (int16_t)(26 * k), (int16_t)(5 * k), fur, a);
+  // right arm: raised for the high five (arm = 0 down .. 1 up), reaching left towards the goblin
+  float hx = x - 6 * k - 30 * k * arm, hy = y - 40 * k - 34 * k * arm;
+  for (int i = 0; i <= 4; i++) {
+    float f = i / 4.0f;
+    s.fillCircle(x - 14 * k + (hx - (x - 14 * k)) * f, y - 50 * k + (hy - (y - 50 * k)) * f, 6 * k, fur, a);
+  }
+  s.fillCircle(hx, hy, 7.5f * k, face, a);                                  // palm
+  s.fillCircle(x, y - 70 * k, 17 * k, fur, a);                              // head
+  s.fillTriangle((int16_t)(x - 14 * k), (int16_t)(y - 76 * k), (int16_t)(x + 12 * k), (int16_t)(y - 78 * k),
+                 (int16_t)(x + 1 * k), (int16_t)(y - 98 * k), fur, a);  // the Bigfoot crest
+  s.fillTriangle((int16_t)(x - 16 * k), (int16_t)(y - 60 * k), (int16_t)(x - 22 * k), (int16_t)(y - 50 * k),
+                 (int16_t)(x - 14 * k), (int16_t)(y - 50 * k), fur, a);  // shaggy shoulders
+  s.fillTriangle((int16_t)(x + 16 * k), (int16_t)(y - 60 * k), (int16_t)(x + 22 * k), (int16_t)(y - 50 * k),
+                 (int16_t)(x + 14 * k), (int16_t)(y - 50 * k), fur, a);
+  s.fillRoundRect((int16_t)(x - 11 * k), (int16_t)(y - 72 * k), (int16_t)(22 * k), (int16_t)(16 * k), (int16_t)(7 * k), face, a);
+  s.fillRoundRect((int16_t)(x - 14 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
+  s.fillRoundRect((int16_t)(x + 2 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
+  s.fillRect((int16_t)(x - 2 * k), (int16_t)(y - 76 * k), (int16_t)(4 * k), (int16_t)(2 * k), lens, a);
+  s.line((int16_t)(x - 12 * k), (int16_t)(y - 77 * k), (int16_t)(x - 8 * k), (int16_t)(y - 77 * k), kMagenta, a);  // shine
+  s.line((int16_t)(x - 4 * k), (int16_t)(y - 62 * k), (int16_t)(x + 4 * k), (int16_t)(y - 61 * k), dark, a);       // grin
+}
+
+void drawSquachVisit(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  bool aura = o.value & 1;
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  float in = easeOut(t / 400.0f);
+  uint8_t A = a8(255 * in);
+  // synthwave sunset
+  s.fillRect(0, 0, W, H, 0x0000, a8(235 * in));
+  s.gradientV(0, 34, W, 112, hex(0x1A0B33), hex(0x8A1E6E), A);
+  uint16_t sunTop = hex(0xFFD54A), sunBot = hex(0xFF4FD8);
+  for (int i = 0; i < 46; i++) {  // the sun, in horizontal bands with gaps
+    int16_t y = (int16_t)(100 + i);
+    if (i > 22 && (i % 6) < 2) continue;
+    float dy = 46 - i;
+    int16_t half = (int16_t)sqrtf(46.0f * 46 - dy * dy);
+    s.hline(W / 2 - half, y, half * 2, gfx::mix(sunTop, sunBot, (uint8_t)(i * 5)), A);
+  }
+  s.fillRect(0, 146, W, H - 146, hex(0x12061F), A);
+  uint16_t grid = hex(0xFF4FD8);
+  float scroll = (now % 1000) / 1000.0f;
+  for (int i = 0; i < 6; i++) {  // horizon grid, scrolling towards us
+    float f = (i + scroll) / 6.0f;
+    s.hline(0, (int16_t)(146 + f * f * 60), W, grid, a8(150 * in));
+  }
+  for (int i = -6; i <= 6; i++) s.line(W / 2 + i * 12, 146, W / 2 + i * 70, 206, grid, a8(110 * in));
+  // the meeting: they walk in, high five at ~1.6 s, then hang out
+  float walk = clampf(t / 1200.0f, 0, 1);
+  float gx = 40 + 64 * easeOut(walk), sx = 290 - 82 * easeOut(walk);
+  float arm = clampf((t - 900) / 500.0f, 0, 1) * (t < 3600 ? 1.0f : clampf(1 - (t - 3600) / 400.0f, 0, 1));
+  if (aura) {  // the Legend's aura: he earned it
+    float fl = 0.6f + 0.4f * sinf(now / 90.0f);
+    s.glow(sx, 150, 56, hex(0xFF7A1F), a8(120 * fl * in));
+    s.glow(sx, 135, 34, hex(0xFFD54A), a8(90 * fl * in));
+  }
+  drawSquatch(s, sx, 200, 1.05f, arm, A);
+  Companion::Look look;
+  look.scale = 0.8f;
+  look.aura = false;
+  look.alpha = A;
+  Companion::drawGoblin(s, (int16_t)gx, 202, now, CState::Excited, look);
+  if (t > 1500 && t < 2300) {  // high five!
+    float b = (t - 1500) / 800.0f;
+    s.glow(gx + 44, 108, 30 * (1 - b) + 10, kGoldC, a8(200 * (1 - b)));
+    for (int i = 0; i < 6; i++) {
+      float ang = i * kPi / 3;
+      icon(s, Glyph::Star, (int16_t)(gx + 44 + cosf(ang) * 34 * b), (int16_t)(108 + sinf(ang) * 34 * b), 9, kGoldC,
+           a8(255 * (1 - b)));
+    }
+  }
+  s.textCentered(fBig(), W / 2, 4, "SQUATCH SIGHTING!", kMagenta, A);
+  char b[48];
+  if (o.text[0]) snprintf(b, sizeof(b), "%.12s says hi!", o.text);  // SquachMesh names are <= 12
+  else snprintf(b, sizeof(b), "A SquachWatch says hi!");
+  s.textCentered(fBody(), W / 2, 210, b, kText, A);
+  snprintf(b, sizeof(b), "+%lu XP%s", (unsigned long)xp, aura ? "  -  a Legend, no less" : "");
+  s.textCentered(fSmall(), W / 2, 228, b, kAmber, A);
+}
+
+// ---- Hacker gear scenes (loot::Hacker) --------------------------------------------------------
+void drawDolphin(gfx::Surface& s, float x, float y, float k, uint16_t c, uint8_t a) {  // Flipper's mascot
+  static const float body[][3] = {{-26, 6, 7}, {-18, 2, 10}, {-6, -1, 12}, {6, 0, 11}, {16, 3, 8}, {24, 7, 5}};
+  for (const auto& b : body) s.fillCircle(x + b[0] * k, y + b[1] * k, b[2] * k, c, a);
+  s.fillCircle(x - 33 * k, y + 9 * k, 4 * k, c, a);                                       // snout
+  s.fillTriangle((int16_t)(x - 4 * k), (int16_t)(y - 10 * k), (int16_t)(x + 8 * k), (int16_t)(y - 10 * k),
+                 (int16_t)(x + 6 * k), (int16_t)(y - 24 * k), c, a);                      // dorsal fin
+  s.fillTriangle((int16_t)(x + 26 * k), (int16_t)(y + 8 * k), (int16_t)(x + 40 * k), (int16_t)(y - 4 * k),
+                 (int16_t)(x + 36 * k), (int16_t)(y + 10 * k), c, a);                     // tail
+  s.fillTriangle((int16_t)(x + 26 * k), (int16_t)(y + 8 * k), (int16_t)(x + 40 * k), (int16_t)(y + 20 * k),
+                 (int16_t)(x + 36 * k), (int16_t)(y + 10 * k), c, a);
+  s.fillCircle(x - 22 * k, y + 1 * k, 1.8f * k, kBgBottom, a);                            // eye
+}
+
+void drawPineapple(gfx::Surface& s, float x, float y, uint32_t now, uint8_t a) {
+  uint16_t gold = hex(0xF2B630), leaf = hex(0x3FAE4A);
+  for (int i = 0; i < 3; i++)
+    s.fillTriangle((int16_t)x, (int16_t)(y - 18), (int16_t)(x - 14 + i * 14), (int16_t)(y - 44 + (i == 1 ? -6 : 0)),
+                   (int16_t)(x - 4 + i * 4), (int16_t)(y - 20), leaf, a);
+  for (int i = -2; i <= 2; i++) s.fillCircle(x, y + i * 6, 17 - (i < 0 ? -i : i) * 1.5f, gold, a);
+  for (int i = -3; i <= 3; i++) {  // the criss-cross
+    s.line((int16_t)(x - 14), (int16_t)(y + i * 6 - 8), (int16_t)(x + 14), (int16_t)(y + i * 6 + 8), hex(0xB8801A), a);
+    s.line((int16_t)(x + 14), (int16_t)(y + i * 6 - 8), (int16_t)(x - 14), (int16_t)(y + i * 6 + 8), hex(0xB8801A), a);
+  }
+  for (int i = 0; i < 3; i++) {  // it's a Wi-Fi Pineapple: antennas
+    int16_t ax = (int16_t)(x - 22 + i * 22);
+    s.line(ax, (int16_t)(y - 14), (int16_t)(ax + (i - 1) * 6), (int16_t)(y - 40), hex(0x2B2F33), a);
+    bool on = ((now / 250 + i) % 3) == 0;
+    s.fillCircle(ax + (i - 1) * 6, y - 41, 2.5f, on ? kRed : hex(0x55606A), a);
+  }
+}
+
+void drawHackerOverlay(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t h = (uint8_t)(o.value & 0xFF);
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  float in = easeOut(t / 300.0f);
+  uint8_t A = a8(255 * in);
+  s.fillRect(0, 0, W, H, 0x0000, a8(230 * in));
+  uint16_t c = h == loot::H_FLIPPER ? hex(0xFF8200) : h == loot::H_PINEAPPLE ? hex(0xF2B630) : kGreen;
+  rays(s, W / 2, 104, c, a8(18 * in), now / 3500.0f);
+  const char* title = "HACKER GEAR!";
+  const char* line1 = "";
+  const char* line2 = "";
+  float pop = clampf(easeBack((t - 150) / 500.0f), 0, 1.2f);
+  switch (h) {
+    case loot::H_FLIPPER: {
+      title = "A WILD DOLPHIN!";
+      line1 = "A Flipper Zero is nearby.";
+      line2 = "The goblin is not impressed. Much.";
+      for (int i = 0; i < 3; i++)  // waves
+        s.ring(W / 2 - 80 + i * 80 + (int16_t)((now / 30) % 80) - 40, 150, 30, 3, kBlue, a8(120 * in), 300, 120);
+      float jump = sinf(clampf(t / 1800.0f, 0, 1) * kPi * 2) * 30;  // one leap, then a bob
+      if (pop > 0.05f) drawDolphin(s, W / 2, 112 - jump, pop, c, A);
+      break;
+    }
+    case loot::H_PWNAGOTCHI: {
+      title = "A PWNAGOTCHI!";
+      line1 = "It eats Wi-Fi handshakes.";
+      line2 = "Your goblin just counts. Nobody's hungry.";
+      static const char* const kFaces[] = {"(O_O)", "(o_o)", "(-_-)", "(x_x)", "(0_0)"};  // the big font has no ^
+      if (pop > 0.05f) {
+        int16_t bw = (int16_t)(130 * pop), bh = (int16_t)(66 * pop);
+        s.fillRoundRect(W / 2 - bw / 2, 104 - bh / 2, bw, bh, 6, hex(0xE9E7DF), A);  // e-ink screen
+        s.roundRect(W / 2 - bw / 2, 104 - bh / 2, bw, bh, 6, hex(0x2B2F33), A);
+        if (pop > 0.9f) s.textCentered(fBig(), W / 2, 88, kFaces[(now / 700) % 5], hex(0x1A1C1E), A);
+      }
+      break;
+    }
+    case loot::H_PINEAPPLE:
+      title = "FRUIT SALAD!";
+      line1 = "A Wi-Fi Pineapple is out and about.";
+      line2 = "Don't join networks you don't know.";
+      if (pop > 0.05f) drawPineapple(s, W / 2, 118, now, A);
+      break;
+    case loot::H_DEAUTHER: {
+      title = "SCRIPT KIDDIE!";
+      line1 = "An ESP deauther's \"pwned\" network.";
+      line2 = "Somebody's kicking people off Wi-Fi.";
+      if (pop > 0.05f) {
+        s.fillRoundRect(W / 2 - 46, 80, 92, 48, 4, hex(0x1F6B3A), A);  // a little dev board
+        s.fillRect(W / 2 - 14, 92, 28, 24, hex(0x2B2F33), A);
+        for (int i = 0; i < 8; i++) s.fillRect(W / 2 - 42 + i * 11, 124, 5, 6, kGoldC, A);
+        bool on = (now / 120) % 2;
+        s.fillCircle(W / 2 + 34, 88, 3, on ? kRed : hex(0x55606A), A);
+        icon(s, Glyph::Wifi, W / 2, 62, 26, kRed, A);
+        s.line(W / 2 - 14, 50, W / 2 + 14, 74, kRed, A);
+      }
+      break;
+    }
+    default: {  // BLE spam
+      title = "POPUP STORM!";
+      line1 = "Someone's spamming Bluetooth popups.";
+      line2 = "Phones nearby: \"Connect AirPods?\" x100";
+      for (int i = 0; i < 9; i++) {
+        uint32_t seed = (uint32_t)i * 2654435761u;
+        float ft = ((t + (seed >> 20) % 1500) % 1500) / 1500.0f;
+        int16_t x = (int16_t)(20 + (seed >> 8) % 230), y = (int16_t)(40 + ft * 110);
+        uint8_t pa = a8(230 * in * (1 - ft));
+        s.fillRoundRect(x, y, 74, 24, 6, hex(0xF2F2F7), pa);
+        s.text(fSmall(), x + 5, y + 5, i % 3 == 0 ? "Connect?" : i % 3 == 1 ? "AirPods?" : "Pair now?", hex(0x1A1C1E), pa);
+      }
+      for (int i = 0; i < 4; i++) {  // the goblin is dizzy
+        float ang = now / 300.0f + i * kPi / 2;
+        icon(s, Glyph::Star, (int16_t)(W / 2 + cosf(ang) * 26), (int16_t)(110 + sinf(ang) * 10), 10, kGoldC, A);
+      }
+      break;
+    }
+  }
+  s.textCentered(fBig(), W / 2, 12, title, c, A);
+  s.textCentered(fSmall(), W / 2, 160, line1, kText, A);
+  s.textCentered(fSmall(), W / 2, 175, line2, kDim, A);
+  char b[24];
+  snprintf(b, sizeof(b), "+%lu XP", (unsigned long)xp);
+  s.textCentered(fBody(), W / 2, 196, b, kAmber, A);
+  Companion::Look look;  // the goblin puts its Black Hat on for the occasion
+  look.scale = 0.42f;
+  look.hat = 18;
+  look.aura = false;
+  look.alpha = A;
+  Companion::drawGoblin(s, 34, 230, now, CState::Excited, look);
+}
+
+void drawLootFind(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
+  uint8_t r = (uint8_t)(o.value & 0xFF), kind = (uint8_t)((o.value >> 8) & 0xFF);
+  uint32_t xp = (o.value >> 16) & 0xFF;
+  bool ble = (o.value >> 24) & 1;
+  uint16_t c = rarityColor(r, now);
+  float in = easeOut(t / 300.0f);
+  s.fillRect(0, 0, W, H, 0x0000, a8(225 * in));
+  rays(s, W / 2, 100, c, a8((15 + 8 * r) * in), now / 3000.0f);
+  static const char* const kTitle[loot::R_COUNT] = {"FIND!", "NICE FIND!", "RARE FIND!", "EPIC FIND!", "LEGENDARY!"};
+  s.textCentered(fBig(), W / 2, 16, r < loot::R_COUNT ? kTitle[r] : "FIND!", c, a8(255 * in));
+  float pop = easeBack((t - 150) / 450.0f);
+  if (pop > 0.05f) {
+    float k = clampf(pop, 0, 1.2f);
+    s.glow(W / 2, 100, 46 * k, c, a8(110 * clampf(pop, 0, 1)));
+    s.fillCircle(W / 2, 100, 30 * k, kPanel, a8(240 * clampf(pop, 0, 1)));
+    s.ring(W / 2, 100, 30 * k, 3, c, a8(255 * clampf(pop, 0, 1)));
+    icon(s, ble ? Glyph::Ble : Glyph::Wifi, W / 2, 100, (int16_t)(32 * k), c, a8(255 * clampf(pop, 0, 1)));
+  }
+  s.textCentered(fBig(), W / 2, 142, o.text, kText, a8(255 * in));
+  char b[48];
+  snprintf(b, sizeof(b), "%s  -  %s", loot::rarityName(r), loot::kindName(kind));
+  s.textCentered(fSmall(), W / 2, 176, b, c, a8(255 * in));
+  snprintf(b, sizeof(b), "+%lu XP", (unsigned long)xp);
+  s.textCentered(fBody(), W / 2, 196, b, kAmber, a8(255 * in));
 }
 
 void drawLevelUp(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
@@ -1404,6 +1770,9 @@ void drawOverlay(gfx::Surface& s, const UiModel& m) {
     case OvType::AchBatch: drawAchBatch(s, o, t, m.now); break;
     case OvType::Tracker: drawTracker(s, o, t, m.now); break;
     case OvType::Sniff: drawSniff(s, o, t, m.now, m); break;
+    case OvType::Loot: drawLootFind(s, o, t, m.now); break;
+    case OvType::Hacker: drawHackerOverlay(s, o, t, m.now); break;
+    case OvType::Squach: drawSquachVisit(s, o, t, m.now); break;
   }
 }
 
@@ -1859,6 +2228,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         emit(PKind::Heart, x, y, 4, kMagenta, 40, 1.4f);
         say(pick(kPetQuips, 5), now, 2500);
         sfx(kSfxPet);
+        pettedAt = now ? now : 1;  // the pets purr too
         if (hooks.pet) hooks.pet();
       }
       break;
@@ -1879,11 +2249,11 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         }
         break;
       }
-      if (lootPage < 2) break;
+      if (lootPage < kTrophyPage0) break;
       for (int i = 0; i < kPerPage; i++) {
         int16_t cx, cy;
         cellCenter(i, cx, cy);
-        int idx = (lootPage - 2) * kPerPage + i;
+        int idx = (lootPage - kTrophyPage0) * kPerPage + i;
         if (idx < (int)ACHIEVEMENT_COUNT && abs(x - cx) < 24 && abs(y - cy) < 24) { badgeDetail = idx; return; }
       }
       break;
@@ -1891,6 +2261,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
     case Screen::Setup: {
       int row = (int)((y - kBodyY - 4 + setupScroll) / kRowH);
       if (row < 0 || row >= kRows) break;
+      row = kOrder[row];  // screen position -> row id
       Settings& st = *m.settings;
       if (row == 0) {
         int b = st.brightness + (x < W - 90 ? -10 : 10);
@@ -1906,18 +2277,22 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
           if (bannerCount == 1) bannerStart = now;
         }
       } else if (row == 9) {
+        st.pet = (uint8_t)((st.pet + 1) & 3);  // none -> Pip -> Lily -> both
+        if (st.pet) pettedAt = now ? now : 1;  // say hello
+        if (hooks.settingsChanged) hooks.settingsChanged();
+      } else if (row == 10) {
         tapX = tapY = -1;
         screen = Screen::TouchTest;
-      } else if (row == 10) {
+      } else if (row == 11) {
         screen = Screen::Share;
         screenChangedAt = now;
-      } else if (row == 11) {
-        goTo(Screen::Sync, now);
       } else if (row == 12) {
-        startClock(m);
+        goTo(Screen::Sync, now);
       } else if (row == 13) {
+        startClock(m);
+      } else if (row == 14) {
         startNaming(Screen::Setup, m.myName);
-      } else {
+      } else if (x > W - 110) {  // switches flip only on the switch, so a sloppy scroll can't
         toggleSetting(row, m);
       }
       break;
@@ -2100,6 +2475,15 @@ void onEvent(const UiEvent& e, uint32_t now) {
       break;
     case EventType::SniffOff:
       overlay(OvType::Sniff);
+      break;
+    case EventType::LootFind:
+      overlay(OvType::Loot);
+      break;
+    case EventType::Hacker:
+      overlay(OvType::Hacker);
+      break;
+    case EventType::Squach:
+      overlay(OvType::Squach);
       break;
     case EventType::TrackerAlert:
       // Jumps the queue: safety first, celebrations can wait.

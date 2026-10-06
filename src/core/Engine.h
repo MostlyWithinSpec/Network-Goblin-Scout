@@ -81,6 +81,18 @@ class Engine {
   uint64_t scanTop_[trackers::PlaceTracker::kFp] = {};  // strongest networks in this Wi-Fi scan
   int8_t scanTopRssi_[trackers::PlaceTracker::kFp] = {};
   size_t scanTopN_ = 0;
+  loot::Find best_{};         // rarest find of this scan (for the banner / rare-find overlay)
+  uint32_t bestXp_ = 0;
+  bool haveBest_ = false;
+  bool bestBle_ = false;
+  uint32_t blePopups_ = 0;    // "connect me" popup adverts from rotating addresses in this BLE scan
+  uint32_t hackerAtMs_[loot::H_COUNT] = {};
+  void addLoot(const loot::Find& f);
+  uint32_t lootFind(const loot::Find& f, bool ble);  // count it, remember the best of the scan; returns XP
+  int flushBest();                           // best find's rarity (-1 none); rare+ -> overlay event
+  void spotHacker(uint8_t h);
+  uint32_t squachAtMs_ = 0;
+  void squachVisit(const Sighting& s);
 
   static const size_t kNearby = 6;
   NearbyPeer nearby_[kNearby];

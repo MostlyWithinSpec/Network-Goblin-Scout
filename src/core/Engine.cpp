@@ -108,6 +108,8 @@ void Engine::process(const Sighting& s) {
 }
 
 void Engine::processWifi(const Sighting& s) {
+  uint8_t h = loot::hackerOfWifi(s.mac, s.name);  // every sighting: the goblin reacts each time (cooldown)
+  if (h != loot::H_NONE) spotHacker(h);
   if (s.rssi > stats_.bestRssi) stats_.bestRssi = s.rssi;
   if (s.rssi < 0 && (stats_.worstRssi == 0 || s.rssi < stats_.worstRssi)) stats_.worstRssi = s.rssi;
 
@@ -122,9 +124,11 @@ void Engine::processWifi(const Sighting& s) {
 
   uint64_t ssidId = 0;
   size_t nameLen = strnlen(s.name, 32);
+  bool ssidNew = false;
   if (nameLen) {
     ssidId = id(Radio::WiFi, (const uint8_t*)s.name, nameLen) ^ 0x5353494400000000ULL;
-    if (ssids_.add(ssidId, "")) stats_.ssidUnique++;
+    ssidNew = ssids_.add(ssidId, "");
+    if (ssidNew) stats_.ssidUnique++;
   }
 
   uint64_t bssidId = id(Radio::WiFi, s.mac, 6);
@@ -168,7 +172,21 @@ void Engine::processWifi(const Sighting& s) {
     case AuthCat::Enterprise: stats_.wifiEnterprise++; break;
     default: break;
   }
-  addXp(s.auth == AuthCat::Enterprise ? XP_NEW_ENTERPRISE : XP_NEW_NETWORK, true);
+  // Loot: what kind of thing this is and how rare (core/Loot.h). The address and name are only
+  // looked at here, never kept. A name we already have (another access point of the same office
+  // or chain) is more of the same: plain XP, no find. Hidden networks get no setup bonus, so
+  // an office full of hidden access points can't be farmed.
+  uint32_t xp = XP_NEW_NETWORK;
+  if (!nameLen || ssidNew) {
+    loot::WifiTraits tr;
+    if (nameLen) {
+      tr.open = s.auth == AuthCat::Open;
+      tr.wep = s.auth == AuthCat::WEP;
+      tr.enterprise = s.auth == AuthCat::Enterprise;
+    }
+    xp = lootFind(loot::classifyWifi(s.mac, s.name, tr), false);
+  }
+  addXp(xp, true);
   feed(-15, -4);
 }
 
@@ -177,9 +195,28 @@ void Engine::processBle(const Sighting& s) {
   uint64_t anyId = id(Radio::BLE, s.mac, 6);
   blip(anyId, s.rssi, Radio::BLE);
   if (s.tracker) watchTracker(anyId, s);
+  loot::BleInfo bi;
+  bi.hasCompany = s.flags & sflag::kCompany;
+  bi.company = s.company;
+  bi.msgType = s.msgType;
+  bi.tracker = s.tracker;
+  bi.fastPair = s.flags & sflag::kFastPair;
+  bi.flipperSvc = s.flags & sflag::kFlipper;
+  bi.iBeacon = s.flags & sflag::kIBeacon;
+  bi.name = s.name;
+  bi.squach = s.flags & sflag::kSquach;
+  if (bi.squach) squachVisit(s);
+  uint8_t h = bi.squach ? (uint8_t)loot::H_NONE : loot::hackerOfBle(bi);  // a Squachy named "Flipper X" is still a Squachy
+  if (h != loot::H_NONE) spotHacker(h);
   // Phones rotate private addresses every few minutes; only stable addresses
   // count as "unique devices", otherwise the counter is meaningless (and farmable).
-  if (!s.stableAddr) return;
+  // A rotating device is loot only the first time its brand + kind turns up (a new species).
+  if (!s.stableAddr) {
+    if (loot::blePopup(bi)) blePopups_++;
+    loot::Find f = loot::classifyBle(bi);
+    if (f.brand < Stats::kMaxBrands && !(stats_.lootSpecies[f.brand] & (1u << f.kind))) addXp(lootFind(f, true), true);
+    return;
+  }
   uint64_t bleId = anyId;
   char extra[32];
   snprintf(extra, sizeof(extra), "%d,%lu", s.rssi, (unsigned long)gps::unixTime());
@@ -190,7 +227,7 @@ void Engine::processBle(const Sighting& s) {
   if (s.flags & sflag::kNamed) stats_.bleNamed++;
   if (s.flags & sflag::kIBeacon) stats_.bleIBeacon++;
   if (s.flags & sflag::kEddystone) stats_.bleEddystone++;
-  addXp(XP_NEW_BLE, true);
+  addXp(lootFind(loot::classifyBle(bi), true), true);
   feed(-8, -2);
 }
 
@@ -379,17 +416,33 @@ void Engine::endScan(Radio radio, uint32_t seenThisScan) {
     scanTopN_ = 0;
     stats_.lastScanSeen = seenThisScan;
     if (seenThisScan > stats_.maxApsInScan) stats_.maxApsInScan = seenThisScan;
-    if (batchWifiNew) {
-      snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
+    int r = flushBest();
+    if (r < loot::R_RARE && batchWifiNew) {
+      const char* best = loot::kBrands[best_.brand].name;
+      if (r < 0)
+        snprintf(t, sizeof(t), batchWifiNew == 1 ? "New network!" : "%lu new networks!", (unsigned long)batchWifiNew);
+      else if (batchWifiNew == 1)
+        snprintf(t, sizeof(t), "%s! %s", best, loot::rarityName((uint8_t)r));
+      else
+        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchWifiNew, best);
       push(EventType::NewWifi, batchWifiNew, t);
     }
     batchWifiNew = 0;
   } else if (radio == Radio::BLE) {
     stats_.lastBleSeen = seenThisScan;
     if (seenThisScan > stats_.maxBleInScan) stats_.maxBleInScan = seenThisScan;
-    if (batchBleNew) {
-      snprintf(t, sizeof(t), "%lu new BLE device%s", (unsigned long)batchBleNew, batchBleNew == 1 ? "" : "s");
-      push(EventType::NewBle, batchBleNew, t);
+    if (blePopups_ >= BLE_SPAM_POPUPS) spotHacker(loot::H_BLESPAM);
+    blePopups_ = 0;
+    int r = flushBest();
+    if (r < loot::R_RARE && (batchBleNew || r >= 0)) {  // r >= 0 alone: a new species from a rotating address
+      const char* best = loot::kBrands[best_.brand].name;
+      if (r < 0)
+        snprintf(t, sizeof(t), "%lu new BLE device%s", (unsigned long)batchBleNew, batchBleNew == 1 ? "" : "s");
+      else if (batchBleNew <= 1)
+        snprintf(t, sizeof(t), "%s! %s", best, loot::rarityName((uint8_t)r));
+      else
+        snprintf(t, sizeof(t), "%lu new! Best: %s", (unsigned long)batchBleNew, best);
+      push(EventType::NewBle, batchBleNew ? batchBleNew : 1, t);
     }
     batchBleNew = 0;
   } else if (radio == Radio::Thread) {
@@ -458,6 +511,74 @@ void Engine::updateLocation() {
 }
 
 // ---------------------------------------------------------------------------
+uint32_t Engine::lootFind(const loot::Find& f, bool ble) {
+  addLoot(f);
+  uint32_t xp = loot::xp(f.rarity);
+  if (!haveBest_ || f.rarity > best_.rarity) {
+    best_ = f;
+    bestXp_ = xp;
+    bestBle_ = ble;
+    haveBest_ = true;
+  }
+  return xp;
+}
+
+// End of a scan: the rarity of the best find (best_), or -1 if there was none. A Rare or better
+// find gets its own overlay here; the caller puts anything less in the scan banner.
+int Engine::flushBest() {
+  if (!haveBest_) return -1;
+  haveBest_ = false;
+  if (best_.rarity >= loot::R_RARE)
+    push(EventType::LootFind,
+         best_.rarity | (uint32_t)best_.kind << 8 | (bestXp_ & 0xFF) << 16 | (uint32_t)bestBle_ << 24,
+         loot::kBrands[best_.brand].name);
+  return best_.rarity;
+}
+
+// Hacker gear nearby: a fun reaction and some XP, at most once per kind per HACKER_COOLDOWN_MS.
+// Purely passive: whoever owns the gear never knows.
+void Engine::spotHacker(uint8_t h) {
+  if (h >= loot::H_COUNT) return;
+  uint32_t now = millis();
+  if (hackerAtMs_[h] && now - hackerAtMs_[h] < HACKER_COOLDOWN_MS) return;
+  hackerAtMs_[h] = now ? now : 1;
+  stats_.hackerSpots++;
+  stats_.hackerMask |= 1u << h;
+  addXp(XP_HACKER_SPOT);
+  push(EventType::Hacker, h | (uint32_t)XP_HACKER_SPOT << 16, loot::hackerName(h));
+  saveSoon_ = true;
+}
+
+// A SquachWatch (another passive-radio pet, github.com/skizzophrenic/SquachWatch-CYD) said hello
+// over SquachMesh: the goblin and its Squachy high-five. Only seen when its owner has switched
+// SquachMesh "transmit" on.
+void Engine::squachVisit(const Sighting& s) {
+  uint32_t now = millis();
+  if (squachAtMs_ && now - squachAtMs_ < SQUACH_COOLDOWN_MS) return;
+  squachAtMs_ = now ? now : 1;
+  stats_.squachVisits++;
+  addXp(XP_SQUACH_VISIT);
+  push(EventType::Squach, (s.peerHoard ? 1u : 0u) | (uint32_t)XP_SQUACH_VISIT << 16, s.name);
+  feed(-30, -60);  // great company
+  saveSoon_ = true;
+}
+
+void Engine::addLoot(const loot::Find& f) {
+  switch (f.rarity) {
+    case loot::R_COMMON: stats_.lootCommon++; break;
+    case loot::R_UNCOMMON: stats_.lootUncommon++; break;
+    case loot::R_RARE: stats_.lootRare++; break;
+    case loot::R_EPIC: stats_.lootEpic++; break;
+    default: stats_.lootLegendary++; break;
+  }
+  if (f.brand < Stats::kMaxBrands) {
+    if (stats_.lootBrand[f.brand]++ == 0) stats_.lootBrands++;
+    stats_.lootSpecies[f.brand] |= 1u << f.kind;
+  }
+  stats_.lootKinds |= 1u << f.kind;
+  if (f.rarity >= loot::R_RARE) saveSoon_ = true;
+}
+
 void Engine::addXp(uint32_t xp, bool discovery) {
   // A happy goblin (fed and entertained) earns +25% on discoveries.
   if (discovery && mood() == Mood::Happy) {
@@ -648,6 +769,13 @@ void Engine::saveNow() {
     o["d"] = q.done;
   }
 
+  JsonObject dex = doc["dex"].to<JsonObject>();  // Hoard Book: finds per brand key
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++)
+    if (stats_.lootBrand[i]) dex[loot::kBrands[i].key] = stats_.lootBrand[i];
+  JsonObject dexk = doc["dexk"].to<JsonObject>();  // kinds found per brand (Bluetooth species)
+  for (uint16_t i = 0; i < loot::kBrandCount && i < Stats::kMaxBrands; i++)
+    if (stats_.lootSpecies[i]) dexk[loot::kBrands[i].key] = stats_.lootSpecies[i];
+
   JsonArray ach = doc["achievements"].to<JsonArray>();
   for (size_t i = 0; i < ACHIEVEMENT_COUNT; i++)
     if (stats_.achieved[i]) ach.add(ACHIEVEMENTS[i].id);
@@ -667,6 +795,7 @@ void Engine::saveNow() {
   set["agreed"] = settings_.agreed;
   set["sprites"] = settings_.spritePack;
   set["tz"] = settings_.tzMin;
+  set["pet"] = settings_.pet;
 
   String out;
   serializeJsonPretty(doc, out);
@@ -703,6 +832,22 @@ void Engine::loadState() {
   for (JsonVariant v : doc["channels154"].as<JsonArray>()) {
     int c = v.as<int>();
     if (c >= 11 && c <= 26) stats_.channels154.set(c);
+  }
+  for (JsonPair kv : doc["dex"].as<JsonObject>()) {
+    uint16_t b = loot::brandByKey(kv.key().c_str());
+    if (b == loot::kNone || b >= Stats::kMaxBrands) continue;  // a brand from a newer firmware
+    stats_.lootBrand[b] = kv.value() | 0u;
+    if (stats_.lootBrand[b]) {
+      stats_.lootBrands++;
+      stats_.lootKinds |= 1u << loot::kBrands[b].kind;
+      stats_.lootSpecies[b] |= 1u << loot::kBrands[b].kind;  // saves from v0.6.0 have no "dexk"
+    }
+  }
+  for (JsonPair kv : doc["dexk"].as<JsonObject>()) {
+    uint16_t b = loot::brandByKey(kv.key().c_str());
+    if (b == loot::kNone || b >= Stats::kMaxBrands) continue;
+    stats_.lootSpecies[b] |= (kv.value() | 0u) & ((1u << loot::K_COUNT) - 1);
+    stats_.lootKinds |= stats_.lootSpecies[b];
   }
   for (JsonVariant v : doc["achievements"].as<JsonArray>()) {
     const char* key = v.as<const char*>();
@@ -744,5 +889,6 @@ void Engine::loadState() {
     settings_.agreed = set["agreed"] | false;
     settings_.spritePack = set["sprites"] | "goblin";
     settings_.tzMin = set["tz"] | 0;
+    settings_.pet = (uint8_t)((set["pet"] | 0) & 3);
   }
 }

@@ -15,7 +15,7 @@ size_t badges(const Stats& s) { return s.achieved.count(); }
 #define A(id, name, desc, tier, icon, secret, expr) \
   {id, name, desc, tier, Icon::icon, secret, [](const Stats& s) -> bool { return (expr); }}
 
-// Order is the bit index in Stats::achieved (max 128). Append only; never reorder or
+// Order is the bit index in Stats::achieved (max 256). Append only; never reorder or
 // rename ids (they're saved on SD). Names and descriptions can be edited freely.
 const AchievementDef ACHIEVEMENTS[] = {
     // ---- v0.1 originals (ids 0-18) ----------------------------------------------
@@ -168,12 +168,46 @@ const AchievementDef ACHIEVEMENTS[] = {
 
     // ---- v0.5: Goblin Sync (id 122) ------------------------------------------------
     A("first_sync", "Online Goblin", "Sync your goblin to the leaderboard", kBronze, Trophy, false, s.syncs >= 1),
+
+    // ---- v0.6: loot rarity (ids 123-132) ---------------------------------------------
+    A("loot_rare", "Shiny!", "Find a Rare network", kBronze, Star, false, s.lootRare + s.lootEpic + s.lootLegendary >= 1),
+    A("loot_epic", "Jackpot", "Find an Epic network", kSilver, Star, false, s.lootEpic + s.lootLegendary >= 1),
+    A("loot_legendary", "Legend Hunter", "Find a Legendary network", kGold, Star, false, s.lootLegendary >= 1),
+    A("loot_legendary_10", "Mythmaker", "Find 10 Legendary networks", kLegendary, Star, false, s.lootLegendary >= 10),
+    A("brands_10", "Window Shopper", "Collect 10 brands in the Hoard Book", kBronze, Trophy, false, s.lootBrands >= 10),
+    A("brands_40", "Brand Collector", "Collect 40 brands", kSilver, Trophy, false, s.lootBrands >= 40),
+    A("brands_80", "Hoard Book Scholar", "Collect 80 brands", kGold, Trophy, false, s.lootBrands >= 80),
+    A("all_kinds", "Full Shelf", "Find every kind of loot", kLegendary, Trophy, false,
+      s.lootKinds == (1u << loot::K_COUNT) - 1),
+    A("space_goblin", "Space Goblin", "Find a Starlink dish", kSilver, Wifi, true, s.lootKinds & (1u << loot::K_SAT)),
+    A("joyride", "Joyride", "Find a car's Wi-Fi", kSilver, Wifi, true, s.lootKinds & (1u << loot::K_CAR)),
+
+    // ---- v0.6.1: Bluetooth loot and hacker gear (ids 133-141) -----------------------------
+    A("audiophile", "Audiophile", "Find some headphones or a speaker", kBronze, Ble, false,
+      s.lootKinds & (1u << loot::K_AUDIO)),
+    A("wrist_watcher", "Wrist Watcher", "Find a smartwatch or fitness band", kBronze, Ble, false,
+      s.lootKinds & (1u << loot::K_WEARABLE)),
+    A("dolphin_spotter", "Dolphin Spotter", "Spot a Flipper Zero", kSilver, Star, true,
+      s.hackerMask & (1u << loot::H_FLIPPER)),
+    A("pwnagotchi_pal", "Pwnagotchi Pal", "Spot a Pwnagotchi", kGold, Star, true, s.hackerMask & (1u << loot::H_PWNAGOTCHI)),
+    A("fruit_salad", "Fruit Salad", "Spot a Wi-Fi Pineapple", kGold, Star, true, s.hackerMask & (1u << loot::H_PINEAPPLE)),
+    A("script_kiddie", "Script Kiddie Detector", "Spot an ESP deauther", kSilver, Star, true,
+      s.hackerMask & (1u << loot::H_DEAUTHER)),
+    A("popup_survivor", "Popup Survivor", "Live through a Bluetooth popup spam storm", kSilver, Ble, true,
+      s.hackerMask & (1u << loot::H_BLESPAM)),
+    A("hacker_bingo", "Hacker Bingo", "Spot all five kinds of hacker gear", kLegendary, Trophy, true,
+      s.hackerMask == (1u << loot::H_COUNT) - 1),
+    A("con_season", "Con Season", "Spot hacker gear 25 times", kGold, Trophy, false, s.hackerSpots >= 25),
+
+    // ---- v0.6.2: SquachWatch visits (ids 142-143) ------------------------------------------
+    A("bigfoot_sighting", "Bigfoot Sighting", "Get a visit from a SquachWatch", kGold, Paw, true, s.squachVisits >= 1),
+    A("squad_goals", "Squad Goals", "10 SquachWatch visits", kLegendary, Paw, true, s.squachVisits >= 10),
 };
 
 #undef A
 
 const size_t ACHIEVEMENT_COUNT = sizeof(ACHIEVEMENTS) / sizeof(ACHIEVEMENTS[0]);
-static_assert(sizeof(ACHIEVEMENTS) / sizeof(ACHIEVEMENTS[0]) <= 128, "achieved bitset is 128 wide");
+static_assert(sizeof(ACHIEVEMENTS) / sizeof(ACHIEVEMENTS[0]) <= 256, "achieved bitset is 256 wide");
 
 namespace progression {
 

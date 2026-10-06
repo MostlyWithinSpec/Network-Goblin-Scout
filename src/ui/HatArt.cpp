@@ -210,6 +210,18 @@ void drawHat(gfx::Surface& s, uint8_t id, float cx, float brimY, float sc, uint3
       p.rrect(-16, -3, 32, 7, 3, fur);
       break;
     }
+    case 18: {  // Black Hat: a hacker's fedora with a terminal-green band
+      uint16_t felt = hex(0x262C33), edge = hex(0x5A6670), green = hex(0x8EE34F);
+      p.rrect(-22, -3, 44, 5, 2, felt);
+      p.rrect(-12, -17, 24, 15, 6, felt);
+      p.tri(-5, -17, 5, -17, 0, -13, edge);  // the pinch on top
+      p.rect(-11, -7, 22, 4, green);
+      p.rect(-9, -15, 2, 7, edge);           // highlight so it shows on dark backgrounds
+      p.line(-21, -3, 21, -3, edge);
+      float blink = 0.5f + 0.5f * sinf(t * 3);
+      s.glow(p.X(0), p.Y(-5), p.R(9), green, (uint8_t)(70 * blink));
+      break;
+    }
     default: break;
   }
 }

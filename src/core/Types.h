@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <bitset>
+#include "Loot.h"
 
 // Values are mixed into stored ids: never renumber. (Thread = any 802.15.4, incl. Zigbee;
 // its tag is also used for exploration-cell ids.)
@@ -18,6 +19,10 @@ const uint8_t kHidden = 0x04;    // empty SSID
 const uint8_t kIBeacon = 0x01;
 const uint8_t kEddystone = 0x02;
 const uint8_t kNamed = 0x04;     // advertises a local name
+const uint8_t kCompany = 0x08;   // has manufacturer data (Sighting::company is valid)
+const uint8_t kFastPair = 0x10;  // Google Fast Pair service data
+const uint8_t kFlipper = 0x20;   // Flipper Zero service UUID 0x3081-0x3083
+const uint8_t kSquach = 0x40;    // a SquachWatch saying hello (social/SquachVisit.h); name = its Squachy's
 // 802.15.4
 const uint8_t kZigbee = 0x01;    // looks like Zigbee (NWK header / beacon protocol 0)
 const uint8_t kThread = 0x02;    // looks like Thread (6LoWPAN / MAC security / beacon protocol 3)
@@ -48,7 +53,9 @@ struct Sighting {
   uint16_t peerLevel; // Peer only
   uint8_t peerHue;    // Peer only: colour of their goblin
   uint8_t tracker;    // BLE only: trackers::Kind if it looks like an item tracker (0 = no)
-  uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h)
+  uint8_t peerHoard;  // Peer only: hoard tier 0-7 (social/Sniff.h). BLE + sflag::kSquach: 1 = aura lit
+  uint16_t company;   // BLE only: manufacturer data company id (if flags & sflag::kCompany)
+  uint8_t msgType;    // BLE only: first byte after the company id (Apple: Continuity type)
 };
 
 // Lifetime counters saved in state.json under their own names. Add new ones at will;
@@ -64,7 +71,9 @@ struct Sighting {
   X(lastDay) X(streak) X(bestStreak)                                                     \
   X(questsDone) X(boardsCleared) X(hunger) X(boredom)                                    \
   X(batteryMin) X(trackersSeen) X(trackerAlerts) X(sniffOffs) X(sniffWins)                     \
-  X(nightMin) X(seasonMask) X(syncs)
+  X(nightMin) X(seasonMask) X(syncs)                                                     \
+  X(lootCommon) X(lootUncommon) X(lootRare) X(lootEpic) X(lootLegendary)                   \
+  X(hackerSpots) X(hackerMask) X(squachVisits)
 
 struct Stats {
 #define NG_DECLARE_COUNTER(n) uint32_t n = 0;
@@ -84,7 +93,14 @@ struct Stats {
   int8_t worstRssi = 0;         // weakest Wi-Fi signal ever (0 = none yet)
   std::bitset<200> channels;    // Wi-Fi channels seen, indexed by channel number
   std::bitset<27> channels154;  // 802.15.4 channels seen (11-26)
-  std::bitset<128> achieved;
+  std::bitset<256> achieved;
+
+  // Hoard Book (core/Loot.h): finds per brand, saved by brand key in state.json
+  static const uint16_t kMaxBrands = 224;
+  uint32_t lootBrand[kMaxBrands] = {};
+  uint16_t lootBrands = 0;      // brands with at least one find
+  uint32_t lootKinds = 0;       // bit per loot::Kind found
+  uint32_t lootSpecies[kMaxBrands] = {};  // per brand: bit per kind found (saved as "dexk")
 
   // This power-on session (not persisted)
   uint32_t sessWifiNew = 0;
@@ -111,11 +127,15 @@ struct Settings {
   bool agreed = false;          // first-run disclaimer accepted
   int16_t tzMin = 0;            // local time = GPS UTC + this (set from Setup > Clock)
   String spritePack = "goblin";
+  uint8_t pet = 0;              // the goblin's pet (Setup > Pet): 0 none, 1 Pip, 2 Lily, 3 Pip & Lily
 };
 
 enum class EventType : uint8_t {
   NewWifi, NewBle, NewChannel, LevelUp, Achievement, NewCell, DailyBonus,
-  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced
+  New154, PeerNew, PeerReunion, QuestDone, BoardCleared, NewQuests, HatUnlocked, TrackerAlert, SniffOff, Synced,
+  LootFind,  // value = rarity | kind << 8 | xp << 16 (8 bits) | bluetooth << 24, text = brand name
+  Hacker,    // value = loot::Hacker | xp << 16, text = what was spotted
+  Squach     // value = aura | xp << 16, text = the visiting Squachy's name ("" = a stock one)
 };
 
 struct UiEvent {

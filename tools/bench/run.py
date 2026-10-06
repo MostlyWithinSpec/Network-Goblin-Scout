@@ -79,7 +79,10 @@ mu.hook_add(UC_HOOK_CODE, on_mark, begin=syms["bench_mark"], end=syms["bench_mar
 mu.hook_add(UC_HOOK_CODE, on_done, begin=syms["bench_done"], end=syms["bench_done"])
 mu.emu_start(syms["_start"], 0)
 sections = [("home idle", 3), ("home scanning", 3), ("level-up overlay", 3), ("radar", 3),
-            ("night bg re-bake", 1), ("home at night", 3), ("sniff-off overlay", 3)]  # in bench.cpp order
+            ("night bg re-bake", 1), ("home at night", 3), ("sniff-off overlay", 3), ("(pause)", 1),
+            ("loot overlay", 3), ("(pause)", 1), ("hoard book", 3), ("(pause)", 1),
+            ("popup storm overlay", 3), ("(pause)", 1), ("squatch visit", 3), ("(pause)", 1),
+            ("home + Pip & Lily", 3)]  # in bench.cpp order
 for i, ((_, ta), (_, tb)) in enumerate(zip(marks, marks[1:])):
     name, frames = sections[i] if i < len(sections) else (f"section {i + 1}", 1)
     per = (tb - ta) / frames
