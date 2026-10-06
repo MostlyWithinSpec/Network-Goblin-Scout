@@ -8,6 +8,7 @@
 #include "../core/Hats.h"
 #include "../core/Quests.h"
 #include "../core/Trackers.h"
+#include "PetArt.h"
 #include "../social/PeerCodec.h"
 #include "../social/Sniff.h"
 #include "HatArt.h"
@@ -408,6 +409,51 @@ void meter(gfx::Surface& s, int16_t x, int16_t y, Glyph g, const char* label, ui
   bar(s, x + 42, y + 2, 46, 5, full, full < 0.3f ? kRed : c);
 }
 
+// The goblin's pet(s), Setup > Pet. They follow the goblin's mood: ears up while it scans, a hop
+// when it finds something, curled up when it sleeps, and hearts when you pet the goblin.
+uint32_t pettedAt = 0;
+
+PetPose petPose(CState st) {
+  switch (st) {
+    case CState::Sleeping: return PetPose::Sleep;
+    case CState::Discovered:
+    case CState::Excited:
+    case CState::LevelUp:
+    case CState::Achievement:
+    case CState::SyncDone: return PetPose::Hop;
+    case CState::Scanning:
+    case CState::Searching:
+    case CState::Uploading: return PetPose::Alert;
+    default: return PetPose::Sit;
+  }
+}
+
+void drawPets(gfx::Surface& s, const UiModel& m) {
+  uint8_t pet = m.settings->pet & 3;
+  if (!pet) return;
+  PetPose pose = petPose(companion.state(m.now));
+  const float k = 0.95f;
+  const int16_t ground = kBodyY + kBodyH - 4;
+  bool both = pet == 3;
+  // Pip sits to the goblin's right, Lily in the corner on its left; asleep, they curl up together
+  float lilyX = both ? (pose == PetPose::Sleep ? 148 : 24) : 138, pipX = both && pose == PetPose::Sleep ? 124 : 138;
+  // a soft light behind each cat: dark fur on a dark screen needs it
+  float lift = pose == PetPose::Sleep ? 8 : 20;
+  if (pet & 2) s.glow(lilyX, ground - lift * 0.8f, 20, kCyan, 45);
+  if (pet & 1) s.glow(pipX, ground - lift, 24, kCyan, 45);
+  if (pet & 2) drawCat(s, kLily, lilyX, ground, k, m.now, pose, 2);
+  if (pet & 1) drawCat(s, kPip, pipX, ground, k, m.now, pose, 1);
+  if (pose == PetPose::Sleep && (m.now / 1200) % 2)
+    s.text(fSmall(), (int16_t)(both ? 152 : 148), (int16_t)(ground - 30), "z", kDim);
+  uint32_t since = m.now - pettedAt;
+  if (pettedAt && since < 1800) {  // purring
+    float f = since / 1800.0f;
+    uint8_t a = a8(255 * (1 - f));
+    if (pet & 1) icon(s, Glyph::Heart, (int16_t)(pipX + 6), (int16_t)(ground - 44 - f * 18), 8, kMagenta, a);
+    if (pet & 2) icon(s, Glyph::Heart, (int16_t)(lilyX + 5), (int16_t)(ground - 36 - f * 18), 7, kMagenta, a);
+  }
+}
+
 void drawHome(gfx::Surface& s, const UiModel& m) {
   const Stats& st = *m.stats;
   bool scanning = companion.state(m.now) == CState::Scanning;
@@ -422,6 +468,7 @@ void drawHome(gfx::Surface& s, const UiModel& m) {
   }
   const Frame* custom = m.packFrame ? m.packFrame(companion.state(m.now), m.now / 300) : nullptr;
   companion.draw(s, 80, 188, m.now, custom);
+  drawPets(s, m);
 
   meter(s, 6, kBodyY + 6, Glyph::Heart, "FOOD", m.hunger, kGreen);
   meter(s, 6, kBodyY + 18, Glyph::Star, "FUN", m.boredom, kAmber);
@@ -936,7 +983,7 @@ void drawShare(gfx::Surface& s, const UiModel& m) {
 
 // ---------------------------------------------------------------------------
 // Setup
-const int kRows = 14;
+const int kRows = 15;
 const int16_t kRowH = 38;
 
 struct RowInfo { const char* label; const char* sub; };
@@ -950,6 +997,7 @@ const RowInfo kRowInfo[kRows] = {
     {"Invert colours", "if the screen looks negative"},
     {"Turbo display", "faster screen; off if it glitches"},
     {"Sprite pack", "from the SD card"},
+    {"Pet", "a sidekick for your goblin"},
     {"Touch test", "check calibration"},
     {"Share card", "show off your goblin"},
     {"Sync & leaderboard", nullptr},
@@ -981,7 +1029,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     if (y > kBodyY + kBodyH || y + kRowH < kBodyY) continue;
     panel(s, 8, y, W - 16, kRowH - 4);
     const RowInfo& r = kRowInfo[i];
-    if (i == 11) {
+    if (i == 12) {
       s.text(fBody(), 16, y + 1, r.label, kText);
       char b[48];
       if (m.syncSsid[0]) snprintf(b, sizeof(b), "via %s", m.syncSsid);
@@ -990,7 +1038,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
       continue;
     }
-    if (i == 12) {
+    if (i == 13) {
       s.text(fBody(), 16, y + 1, r.label, kText);
       char b[48];
       if (m.localTime) {
@@ -1007,7 +1055,7 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
       continue;
     }
-    if (i == 13) {
+    if (i == 14) {
       char b[64];
       snprintf(b, sizeof(b), "%s  #%08lX", m.myName, (unsigned long)m.myId);
       s.text(fBody(), 16, y + 1, b, kGreen);
@@ -1028,7 +1076,11 @@ void drawSetup(gfx::Surface& s, const UiModel& m) {
     } else if (i == 8) {
       s.textRight(fSmall(), W - 34, y + 9, m.packName, kCyan);
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
-    } else if (i == 9 || i == 10) {
+    } else if (i == 9) {
+      static const char* const kPets[] = {"none", "Pip", "Lily", "Pip & Lily"};
+      s.textRight(fSmall(), W - 34, y + 9, kPets[st.pet & 3], st.pet ? kMagenta : kDim);
+      icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
+    } else if (i == 10 || i == 11) {
       icon(s, Glyph::Chevron, W - 24, y + 17, 10, kCyan);
     }
   }
@@ -2170,6 +2222,7 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
         emit(PKind::Heart, x, y, 4, kMagenta, 40, 1.4f);
         say(pick(kPetQuips, 5), now, 2500);
         sfx(kSfxPet);
+        pettedAt = now ? now : 1;  // the pets purr too
         if (hooks.pet) hooks.pet();
       }
       break;
@@ -2217,16 +2270,20 @@ void onTap(int16_t x, int16_t y, const UiModel& m) {
           if (bannerCount == 1) bannerStart = now;
         }
       } else if (row == 9) {
+        st.pet = (uint8_t)((st.pet + 1) & 3);  // none -> Pip -> Lily -> both
+        if (st.pet) pettedAt = now ? now : 1;  // say hello
+        if (hooks.settingsChanged) hooks.settingsChanged();
+      } else if (row == 10) {
         tapX = tapY = -1;
         screen = Screen::TouchTest;
-      } else if (row == 10) {
+      } else if (row == 11) {
         screen = Screen::Share;
         screenChangedAt = now;
-      } else if (row == 11) {
-        goTo(Screen::Sync, now);
       } else if (row == 12) {
-        startClock(m);
+        goTo(Screen::Sync, now);
       } else if (row == 13) {
+        startClock(m);
+      } else if (row == 14) {
         startNaming(Screen::Setup, m.myName);
       } else {
         toggleSetting(row, m);

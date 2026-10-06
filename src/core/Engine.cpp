@@ -795,6 +795,7 @@ void Engine::saveNow() {
   set["agreed"] = settings_.agreed;
   set["sprites"] = settings_.spritePack;
   set["tz"] = settings_.tzMin;
+  set["pet"] = settings_.pet;
 
   String out;
   serializeJsonPretty(doc, out);
@@ -888,5 +889,6 @@ void Engine::loadState() {
     settings_.agreed = set["agreed"] | false;
     settings_.spritePack = set["sprites"] | "goblin";
     settings_.tzMin = set["tz"] | 0;
+    settings_.pet = (uint8_t)((set["pet"] | 0) & 3);
   }
 }

@@ -8,5 +8,5 @@ SURFACE=${1:-$ROOT/src/ui/gfx/Surface.cpp}
   -o "$ROOT/tools/bench/qrcodegen.o"
 "$T/riscv32-esp-elf-g++" -march=rv32imac_zicsr_zifencei -mabi=ilp32 -Os -std=gnu++2b -fno-exceptions -fno-rtti \
   --specs=nosys.specs -I "$ROOT/tools/preview/shim" -I "$ROOT/src" -I "$ROOT/include" -I "$ROOT/lib/qrcodegen" \
-  "$ROOT/tools/bench/bench.cpp" "$ROOT/src/ui/Ui.cpp" "$ROOT/src/ui/Widgets.cpp" "$ROOT/src/ui/Companion.cpp" "$ROOT/src/ui/HatArt.cpp" "$ROOT/src/core/Quests.cpp" "$ROOT/src/core/Hats.cpp" "$ROOT/src/core/Trackers.cpp" "$ROOT/src/core/Loot.cpp" "$ROOT/tools/bench/qrcodegen.o" \
+  "$ROOT/tools/bench/bench.cpp" "$ROOT/src/ui/Ui.cpp" "$ROOT/src/ui/Widgets.cpp" "$ROOT/src/ui/Companion.cpp" "$ROOT/src/ui/HatArt.cpp" "$ROOT/src/ui/PetArt.cpp" "$ROOT/src/core/Quests.cpp" "$ROOT/src/core/Hats.cpp" "$ROOT/src/core/Trackers.cpp" "$ROOT/src/core/Loot.cpp" "$ROOT/tools/bench/qrcodegen.o" \
   "$SURFACE" "$ROOT/src/core/Achievements.cpp" -lm -o "${OUT:-$ROOT/tools/bench/bench.elf}"

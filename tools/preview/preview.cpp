@@ -142,6 +142,17 @@ int main() {
   ui::pet().setBase(CState::Idle);
   run(3000);
   save("02_home_idle");
+  // pets (Setup > Pet)
+  settings.pet = 1; run(1200); save("02b_pet_pip");
+  settings.pet = 2; run(1200); save("02c_pet_lily");
+  settings.pet = 3; run(1200); save("02d_pet_both");
+  tap(80, 150); run(500); save("02e_pet_purr");
+  ui::pet().setBase(CState::Sleeping); run(2500); save("02f_pet_both_asleep");
+  ui::pet().setBase(CState::Idle);
+  ui::debugShow(4, 220); run(800); save("02g_setup_pet_row");
+  ui::debugShow(0, 0);
+  run(3000);
+  settings.pet = 0;
 
   model.scanning = "Wi-Fi";
   ui::pet().setBase(CState::Scanning);

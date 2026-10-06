@@ -10,7 +10,7 @@ OUT="$ROOT/tools/preview/out"
 mkdir -p "$OUT"
 gcc -std=c99 -O2 $FLAGS -c "$ROOT/lib/qrcodegen/qrcodegen.c" -o "$OUT/qrcodegen.o"
 g++ -std=gnu++17 -O2 $FLAGS -Wall -Wextra -I "$ROOT/tools/preview/shim" -I "$ROOT/src" -I "$ROOT/include" -I "$ROOT/lib/qrcodegen" \
-  "$ROOT/tools/preview/preview.cpp" "$ROOT/src/ui/Ui.cpp" "$ROOT/src/ui/Widgets.cpp" "$ROOT/src/ui/Companion.cpp" "$ROOT/src/ui/HatArt.cpp" "$ROOT/src/core/Quests.cpp" "$ROOT/src/core/Hats.cpp" "$ROOT/src/core/Trackers.cpp" "$ROOT/src/core/Loot.cpp" "$OUT/qrcodegen.o" \
+  "$ROOT/tools/preview/preview.cpp" "$ROOT/src/ui/Ui.cpp" "$ROOT/src/ui/Widgets.cpp" "$ROOT/src/ui/Companion.cpp" "$ROOT/src/ui/HatArt.cpp" "$ROOT/src/ui/PetArt.cpp" "$ROOT/src/core/Quests.cpp" "$ROOT/src/core/Hats.cpp" "$ROOT/src/core/Trackers.cpp" "$ROOT/src/core/Loot.cpp" "$OUT/qrcodegen.o" \
   "$ROOT/src/ui/gfx/Surface.cpp" "$ROOT/src/core/Achievements.cpp" -o "$OUT/preview"
 cd "$OUT" && ./preview
 python3 - "$OUT" <<'PY'

@@ -93,6 +93,14 @@ int main() {
   now += 1600;
   for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
   bench_mark(16);
+  ui::debugShow(0, 0);
+  settings.pet = 3;  // Pip & Lily on the home screen
+  now += 7000;
+  model.scanning = nullptr;
+  ui::pet().setBase(CState::Idle);
+  bench_mark(17);
+  for (int i = 0; i < 3; i++) { now += 40; model.now = now; ui::render(surf, model); }
+  bench_mark(18);
   bench_done();
   return 0;
 }

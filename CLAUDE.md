@@ -263,7 +263,14 @@ their sprite unless the author permits), +40 XP once per 20 min, 2 achievements 
 (Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
 whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
-Ideas from the owner, not started: Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
+v0.6.3 (compiles; untested on hardware): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
+none / Pip / Lily / both, saved as settings "pet". ui/PetArt draws a cat from a coat recipe (CatCoat):
+Pip = the owner's torico (black, white bib + paws, ginger half-face), Lily = the owner's tiny tortie
+(brindled, ginger blaze, kitten). Poses follow the goblin's mood (sit / alert while scanning / hop on finds /
+curled asleep, both cuddle), hearts when the goblin is petted. ~1.4 M instr/frame for both on Home.
+Next for pets: user-added cats from a coat recipe on SD (/pets/*.json), maybe picture packs for non-cats.
+Ideas from the owner, not started: Michael Myers-style goblin (keep it a generic masked homage if shared),
+Pwnagotchi one-sided sniff-off (needs promiscuous mode to read its JSON),
 SquachWatch interop (share our beacon format) and a rotating beacon id (the stable goblin id in the beacon is
 trackable; the encounter cross-check depends on it).
 Next: ideas list (docs/sync-plan.md section 6), battery hardware when parts arrive.

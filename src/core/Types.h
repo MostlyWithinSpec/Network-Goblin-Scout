@@ -127,6 +127,7 @@ struct Settings {
   bool agreed = false;          // first-run disclaimer accepted
   int16_t tzMin = 0;            // local time = GPS UTC + this (set from Setup > Clock)
   String spritePack = "goblin";
+  uint8_t pet = 0;              // the goblin's pet (Setup > Pet): 0 none, 1 Pip, 2 Lily, 3 Pip & Lily
 };
 
 enum class EventType : uint8_t {
