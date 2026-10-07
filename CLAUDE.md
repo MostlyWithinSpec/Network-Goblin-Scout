@@ -269,6 +269,9 @@ Publishing a tested build: this sandbox can't download CI artifacts (api.github.
 host are blocked), so the owner uploaded firmware.bin + firmware.factory.bin from the CI run they tested
 into network-goblin-labs scout/flash/firmware/<version>/ via GitHub's web upload; then check them
 (version string, factory = same app at 0x10000) and point manifest.json / manifest-update.json / index.html at it.
+Change only the firmware/<version>/ paths and the FIRMWARE label (a global version replace once rewrote the
+esp-web-tools-10.4.0 script path and broke the flasher v0.5.0-v0.6.4), then run `sh tools/check-flashers.sh`
+in the labs repo.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
 whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
 v0.6.3 (confirmed on hardware with v0.6.4): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
