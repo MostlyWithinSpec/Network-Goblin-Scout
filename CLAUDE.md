@@ -273,7 +273,11 @@ Change only the firmware/<version>/ paths and the FIRMWARE label (a global versi
 esp-web-tools-10.4.0 script path and broke the flasher v0.5.0-v0.6.4), then run `sh tools/check-flashers.sh`
 in the labs repo.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
-whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
+whether we may use their Squachy sprite. The author said yes (2026-10-12): "a small Squachy sprite, with credit
+and a link back to this repo"; they keep the issue open to track a goblin visiting a Squachy on their side.
+v0.6.5: the visit scene draws their real Squachy (4 waving frames cut unaltered from their README demo GIF, at 2x,
+`assets/squachy/` + CREDITS.md -> `src/ui/assets/SquachyArt.h` via gen_assets.py), with an on-screen credit line.
+Keep the credit (scene, README, CREDITS.md) whenever he's shown, and don't alter or reuse his art beyond that.
 v0.6.3 (confirmed on hardware with v0.6.4): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
 none / Pip / Lily / both, saved as settings "pet". ui/PetArt draws a cat from a coat recipe (CatCoat):
 Pip = the owner's torico (black, white bib + paws, ginger half-face), Lily = the owner's tiny tortie

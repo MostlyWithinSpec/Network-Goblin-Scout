@@ -15,6 +15,7 @@
 #include "Theme.h"
 #include "Widgets.h"
 #include "assets/GoblinArt.h"
+#include "assets/SquachyArt.h"
 
 extern "C" {
 #include "qrcodegen.h"
@@ -1291,35 +1292,14 @@ void startOverlay(uint32_t now) {
 }
 
 // ---- A SquachWatch visits ---------------------------------------------------------------------
-// Our own homage to SquachWatch's mascot (their art is theirs): a shades-wearing Bigfoot on a
-// synthwave sunset, high-fiving the goblin.
-void drawSquatch(gfx::Surface& s, float x, float y, float k, float arm, uint8_t a) {  // (x, y) = feet
-  uint16_t fur = hex(0x7A4A2A), dark = hex(0x553218), face = hex(0xC99A6E), lens = hex(0x16101F);
-  s.fillCircle(x - 9 * k, y - 4 * k, 8 * k, dark, a);                       // feet
-  s.fillCircle(x + 9 * k, y - 4 * k, 8 * k, dark, a);
-  s.fillRoundRect((int16_t)(x - 20 * k), (int16_t)(y - 62 * k), (int16_t)(40 * k), (int16_t)(58 * k), (int16_t)(16 * k), fur, a);
-  s.fillCircle(x - 21 * k, y - 34 * k, 7 * k, fur, a);                      // left arm, down
-  s.fillRoundRect((int16_t)(x - 26 * k), (int16_t)(y - 50 * k), (int16_t)(10 * k), (int16_t)(26 * k), (int16_t)(5 * k), fur, a);
-  // right arm: raised for the high five (arm = 0 down .. 1 up), reaching left towards the goblin
-  float hx = x - 6 * k - 30 * k * arm, hy = y - 40 * k - 34 * k * arm;
-  for (int i = 0; i <= 4; i++) {
-    float f = i / 4.0f;
-    s.fillCircle(x - 14 * k + (hx - (x - 14 * k)) * f, y - 50 * k + (hy - (y - 50 * k)) * f, 6 * k, fur, a);
-  }
-  s.fillCircle(hx, hy, 7.5f * k, face, a);                                  // palm
-  s.fillCircle(x, y - 70 * k, 17 * k, fur, a);                              // head
-  s.fillTriangle((int16_t)(x - 14 * k), (int16_t)(y - 76 * k), (int16_t)(x + 12 * k), (int16_t)(y - 78 * k),
-                 (int16_t)(x + 1 * k), (int16_t)(y - 98 * k), fur, a);  // the Bigfoot crest
-  s.fillTriangle((int16_t)(x - 16 * k), (int16_t)(y - 60 * k), (int16_t)(x - 22 * k), (int16_t)(y - 50 * k),
-                 (int16_t)(x - 14 * k), (int16_t)(y - 50 * k), fur, a);  // shaggy shoulders
-  s.fillTriangle((int16_t)(x + 16 * k), (int16_t)(y - 60 * k), (int16_t)(x + 22 * k), (int16_t)(y - 50 * k),
-                 (int16_t)(x + 14 * k), (int16_t)(y - 50 * k), fur, a);
-  s.fillRoundRect((int16_t)(x - 11 * k), (int16_t)(y - 72 * k), (int16_t)(22 * k), (int16_t)(16 * k), (int16_t)(7 * k), face, a);
-  s.fillRoundRect((int16_t)(x - 14 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
-  s.fillRoundRect((int16_t)(x + 2 * k), (int16_t)(y - 78 * k), (int16_t)(12 * k), (int16_t)(7 * k), (int16_t)(2 * k), lens, a);
-  s.fillRect((int16_t)(x - 2 * k), (int16_t)(y - 76 * k), (int16_t)(4 * k), (int16_t)(2 * k), lens, a);
-  s.line((int16_t)(x - 12 * k), (int16_t)(y - 77 * k), (int16_t)(x - 8 * k), (int16_t)(y - 77 * k), kMagenta, a);  // shine
-  s.line((int16_t)(x - 4 * k), (int16_t)(y - 62 * k), (int16_t)(x + 4 * k), (int16_t)(y - 61 * k), dark, a);       // grin
+// SquachWatch's own Squachy, waving, on a synthwave sunset, high-fiving the goblin. His frames are
+// the SquachWatch author's art, used with permission (assets/squachy/CREDITS.md), drawn unaltered
+// at 2x. Frames 0-3 go from arm out to arm straight up.
+void drawSquachy(gfx::Surface& s, int16_t x, int16_t y, uint8_t frame, uint8_t a) {  // (x, y) = top-left
+  gfx::SpriteFx fx;
+  fx.scaleX = fx.scaleY = 2;
+  fx.alpha = a;
+  s.sprite(art::kSquachyPx[frame], art::kSquachyAlpha[frame], nullptr, art::kSquachyW, art::kSquachyH, x, y, fx);
 }
 
 void drawSquachVisit(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now) {
@@ -1346,31 +1326,38 @@ void drawSquachVisit(gfx::Surface& s, const Overlay& o, uint32_t t, uint32_t now
     s.hline(0, (int16_t)(146 + f * f * 60), W, grid, a8(150 * in));
   }
   for (int i = -6; i <= 6; i++) s.line(W / 2 + i * 12, 146, W / 2 + i * 70, 206, grid, a8(110 * in));
-  // the meeting: they walk in, high five at ~1.6 s, then hang out
-  float walk = clampf(t / 1200.0f, 0, 1);
-  float gx = 40 + 64 * easeOut(walk), sx = 290 - 82 * easeOut(walk);
-  float arm = clampf((t - 900) / 500.0f, 0, 1) * (t < 3600 ? 1.0f : clampf(1 - (t - 3600) / 400.0f, 0, 1));
+  // the meeting: they walk in waving, high five at ~1.6 s, then hang out
+  float walk = easeOut(clampf(t / 1200.0f, 0, 1));
+  int16_t sqx = (int16_t)(-80 + 136 * walk), sqy = (int16_t)(200 - 2 * art::kSquachyH);
+  float gx = 330 - 172 * walk;
+  bool five = t > 1300 && t < 2400;
+  static const uint8_t kWave[] = {0, 1, 2, 3, 2, 1};
+  uint8_t frame = five ? 3 : kWave[(now / 140) % 6];
+  if (!five) sqy -= (int16_t)((now / 280) % 2);  // their idle bob, one pixel
   if (aura) {  // the Legend's aura: he earned it
     float fl = 0.6f + 0.4f * sinf(now / 90.0f);
-    s.glow(sx, 150, 56, hex(0xFF7A1F), a8(120 * fl * in));
-    s.glow(sx, 135, 34, hex(0xFFD54A), a8(90 * fl * in));
+    s.glow(sqx + 30, 150, 56, hex(0xFF7A1F), a8(120 * fl * in));
+    s.glow(sqx + 30, 135, 34, hex(0xFFD54A), a8(90 * fl * in));
   }
-  drawSquatch(s, sx, 200, 1.05f, arm, A);
+  drawSquachy(s, sqx, sqy, frame, A);
   Companion::Look look;
   look.scale = 0.8f;
+  look.flip = true;  // face him
   look.aura = false;
   look.alpha = A;
   Companion::drawGoblin(s, (int16_t)gx, 202, now, CState::Excited, look);
+  float hx = sqx + 2 * 19, hy = sqy + 4;  // his raised hand in frame 3
   if (t > 1500 && t < 2300) {  // high five!
     float b = (t - 1500) / 800.0f;
-    s.glow(gx + 44, 108, 30 * (1 - b) + 10, kGoldC, a8(200 * (1 - b)));
+    s.glow(hx, hy, 30 * (1 - b) + 10, kGoldC, a8(200 * (1 - b)));
     for (int i = 0; i < 6; i++) {
       float ang = i * kPi / 3;
-      icon(s, Glyph::Star, (int16_t)(gx + 44 + cosf(ang) * 34 * b), (int16_t)(108 + sinf(ang) * 34 * b), 9, kGoldC,
+      icon(s, Glyph::Star, (int16_t)(hx + cosf(ang) * 34 * b), (int16_t)(hy + sinf(ang) * 34 * b), 9, kGoldC,
            a8(255 * (1 - b)));
     }
   }
   s.textCentered(fBig(), W / 2, 4, "SQUATCH SIGHTING!", kMagenta, A);
+  s.textCentered(fSmall(), W / 2, 26, "Squachy by SquachWatch-CYD", kDim, A);  // the credit they asked for
   char b[48];
   if (o.text[0]) snprintf(b, sizeof(b), "%.12s says hi!", o.text);  // SquachMesh names are <= 12
   else snprintf(b, sizeof(b), "A SquachWatch says hi!");

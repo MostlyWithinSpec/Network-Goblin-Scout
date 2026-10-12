@@ -307,8 +307,10 @@ sd_card/                 copy to the microSD card
 - Maker codes: the [IEEE OUI registry](https://standards-oui.ieee.org/) and the Bluetooth SIG company list
   (via the `bluetooth-numbers` package), turned into a table by `tools/gen_oui.py`.
   Thanks to [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) for the nudge to look at what
-  the radios are saying (and for its careful notes on which maker codes can be trusted). The visiting
-  Squachy on our screen is our own drawing; the real one lives on SquachWatch.
+  the radios are saying (and for its careful notes on which maker codes can be trusted).
+- **Squachy**, the visiting sasquatch, is [SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD)'s
+  mascot by skizzophrenic, used with permission (his waving frames, unaltered, in `assets/squachy/`).
+  He isn't covered by this repo's licence: see `assets/squachy/CREDITS.md` before reusing him.
 - QR codes: [Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT), in `lib/qrcodegen/`.
 
 <p align="center"><i>Feed the goblin. Respect the airwaves.</i></p>
