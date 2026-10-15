@@ -298,7 +298,7 @@ sd_card/                 copy to the microSD card
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
 - [x] 144 achievements, levels, streaks, exploration
-- [x] Hunger & boredom, quest boards, 17 hats (4 seasonal), radar, share card with QR code
+- [x] Hunger & boredom, quest boards, 18 hats (4 seasonal), radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
 - [x] Tracker alert, sniff-offs, day/night, seasonal hats

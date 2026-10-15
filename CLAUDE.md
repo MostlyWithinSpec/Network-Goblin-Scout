@@ -262,8 +262,8 @@ Regenerate the table: `python3 tools/gen_oui.py oui.txt companies.py > src/core/
 netaddr/eui/oui.txt and bluetooth_numbers/_companies.py).
 v0.6.2 (confirmed on hardware, on the web flasher; owner: "works perfect"): SquachWatch visits. Their SquachMesh hello (BLE company 0xFFFF,
 "SQM1", version 1, appearance word, flags 0, optional 12-char name; decoded in social/SquachVisit.h from
-their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing, never
-their sprite unless the author permits), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
+their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing until v0.6.5, now
+their real Squachy with permission, see below), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
 (Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
 Publishing a tested build: this sandbox can't download CI artifacts (api.github.com and the Azure blob
 host are blocked), so the owner uploaded firmware.bin + firmware.factory.bin from the CI run they tested
