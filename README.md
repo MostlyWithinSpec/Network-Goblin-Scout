@@ -44,9 +44,9 @@ press **Install** on the [web flasher](https://scout.networkgoblin.dev/flash/). 
 | 📡 **Dual-band Wi-Fi sniffing** | 2.4 *and* 5 GHz, passive beacon listening. Spots Wi-Fi 6, WPS, hidden networks, and the occasional WEP fossil. |
 | 🔵 **Bluetooth snooping** | Passive BLE scans. iBeacons, Eddystone, named gadgets. Phones with rotating addresses count as *sightings*, not trophies (no farming!). |
 | 🕸️ **Mesh eavesdropping** | The C5's third radio listens to 802.15.4: Zigbee bulbs, Thread sensors, Matter hubs. Your smart home is chattier than you think. |
-| 💎 **Loot rarity** | Every new network or gadget is loot. The goblin works out what it found from the maker code: *another Netgear? Common.* An office access point left wide open? **Legendary.** A Starlink dish, a Tesla, AirPods, a Garmin, an Oura ring, a card terminal... 193 brands in 22 kinds, five rarities from Common (1 XP) to Legendary (50 XP), and a **Hoard Book** to fill in. Phones that keep changing their Bluetooth address only count the first time a brand turns up, so there's no farming. |
+| 💎 **Loot rarity** | Every new network or gadget is loot. The goblin works out what it found from the maker code: *another Netgear? Common.* An office access point left wide open? **Legendary.** A Starlink dish, a Tesla, AirPods, a Garmin, an Oura ring, a card terminal... 194 brands in 22 kinds, five rarities from Common (1 XP) to Legendary (50 XP), and a **Hoard Book** to fill in. Phones that keep changing their Bluetooth address only count the first time a brand turns up, so there's no farming. |
 | 🐬 **Hacker gear** | The goblin notices the hacker toys: a **Flipper Zero** (a wild dolphin appears!), a **Pwnagotchi**, a **Wi-Fi Pineapple**, an **ESP deauther** and **Bluetooth popup spam** storms. Each one gets its own scene, XP, a trophy, and the **Black Hat**. Strictly listening: whoever owns the gear never knows. |
-| 🦶 **Squatch sightings** | If a [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) nearby has SquachMesh switched on, its Squachy drops by: a synthwave sunset, a high five, and its name if it has one. Fellow pets of the airwaves. |
+| 🦶 **Squatch sightings** | If a [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) nearby has SquachMesh switched on, **Squachy himself** drops by (the real one, with his author's blessing): a synthwave sunset, a wave, a high five, and the watch's name if it has one. Fellow pets of the airwaves. |
 | 👺 **Goblin encounters** | Two Scouts near each other *notice each other* (Pwnagotchi-style). Cue the encounter scene, sparks, hearts and **+100 XP** for a new friend. |
 | 👃 **Sniff-offs** | Then they sniff each other's hoards. Bigger hoard wins (level breaks a tie) and *both* goblins get XP. Bragging rights not included, but strongly implied. |
 | 🏷️ **Tracker alert** | Actually useful: if an AirTag, Tile, SmartTag or Google tracker keeps tagging along with you through 3+ places for 15+ minutes, the goblin sounds the alarm. Your own? Tap **It's mine** and it never nags about that one again. |
@@ -91,6 +91,16 @@ press **Install** on the [web flasher](https://scout.networkgoblin.dev/flash/). 
 <td><img src="docs/img/sync.png" width="240"><br><sub>Goblin Sync: onto the leaderboard.</sub></td>
 <td><img src="docs/img/wifi_pick.png" width="240"><br><sub>Pick your Wi-Fi (once).</sub></td>
 <td><img src="docs/img/keyboard.png" width="240"><br><sub>A real keyboard, symbols and all.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/loot_legendary.png" width="240"><br><sub>Legendary loot. Someone left the office Wi-Fi open.</sub></td>
+<td><img src="docs/img/hacker_flipper.png" width="240"><br><sub>A wild Flipper Zero appears!</sub></td>
+<td><img src="docs/img/hoard_book.png" width="240"><br><sub>The Hoard Book: gotta sniff 'em all.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/img/squachy.png" width="240"><br><sub>Squachy from SquachWatch drops by. High five!</sub></td>
+<td><img src="docs/img/pets.png" width="240"><br><sub>Pip and Lily, the goblin's cats.</sub></td>
+<td><img src="docs/img/pets_asleep.png" width="240"><br><sub>Nap time for everyone.</sub></td>
 </tr>
 <tr>
 <td><img src="docs/img/stats_spectrum.png" width="240"><br><sub>Every channel it's ever heard.</sub></td>
@@ -154,8 +164,12 @@ ESP32-C5). It's big. Make a sandwich.
 
 - **Tabs** along the bottom: Home, Radar, Stats, Loot, Setup. **Swipe** left/right to flip tabs and pages.
 - **Tap the goblin** to pet it. It likes that. Probably. **Hold** it to pull up its share card.
-- **Loot** = quests, then the wardrobe (tap a hat to wear it), then the trophy shelf. Tap a badge to read
-  what it's for. Secret ones stay secret until you earn them.
+- **Loot** = quests, then the wardrobe (tap a hat to wear it), then the Hoard Book (every brand and kind of
+  gadget found so far), then the trophy shelf. Tap a badge to read what it's for. Secret ones stay secret until you earn them.
+- **Setup** keeps the everyday rows at the top: your goblin's name, Sync & leaderboard, Pet and Share card, then
+  the radios and display. On/off rows only flip when you tap the switch itself, so a stray tap while scrolling won't
+  turn a radio off.
+- **Setup → Pet** picks a cat for your goblin: Pip, Lily, both, or none.
 - **Food & fun meters** (top left of Home): a fed, entertained goblin earns +25% XP. Take it somewhere new.
 - **BOOT button** = pocket mode: screen off, goblin keeps sniffing. Tap the screen to wake it.
 - **Setup → Turbo display** runs the screen at full speed. If you see glitches, turn it off.
@@ -166,7 +180,7 @@ ESP32-C5). It's big. Make a sandwich.
 - **Back up `/scout/sync.key`** somewhere safe: it's your goblin's leaderboard identity. If the SD card dies,
   copy it onto the new card and your goblin keeps its place.
 - **Setup → Clock** sets the time (no GPS needed; it's forgotten at power-off). With GPS it sets your time zone instead.
-- **Setup → About** to rename your goblin.
+- **Setup → About** (the top row) to rename your goblin.
 
 ### Hardware bring-up mode
 
@@ -284,7 +298,7 @@ sd_card/                 copy to the microSD card
 - [x] 802.15.4 (Zigbee / Thread) sniffing
 - [x] Goblin encounters (needs two goblins, or a phone faking one; see `CLAUDE.md`)
 - [x] 144 achievements, levels, streaks, exploration
-- [x] Hunger & boredom, quest boards, 17 hats (4 seasonal), radar, share card with QR code
+- [x] Hunger & boredom, quest boards, 18 hats (4 seasonal), radar, share card with QR code
 - [x] Animated goblin and a UI that doesn't look like 1997
 - [x] First-run disclaimer, name your goblin, progress survives re-flashing
 - [x] Tracker alert, sniff-offs, day/night, seasonal hats
@@ -292,9 +306,11 @@ sd_card/                 copy to the microSD card
 - [x] Goblin Sync, [leaderboards](https://scout.networkgoblin.dev/leaderboard/) and goblin profiles, self-service removal
 - [x] [Web flasher](https://scout.networkgoblin.dev/flash/): install and update from the browser
 - [x] Encounter cross-checks: the "goblins met" board counts only meetings both goblins report
-- [x] Loot rarity: 193 brands (Wi-Fi and Bluetooth), five rarities, a Hoard Book, and a Legendary finds board
+- [x] Loot rarity: 194 brands (Wi-Fi and Bluetooth), five rarities, a Hoard Book, and a Legendary finds board
 - [x] Hacker gear sightings: Flipper Zero, Pwnagotchi, Wi-Fi Pineapple, deauthers, Bluetooth popup spam
-- [x] SquachWatch visits (their SquachMesh hello, read from its published format)
+- [x] SquachWatch visits (their SquachMesh hello, read from its published format), now with the real Squachy
+- [x] Pets: Pip the torico and Lily the tiny tortie
+- [x] A tidier Setup screen (everyday rows first, switches that don't flip by accident)
 - [ ] ~~Temperature stat~~ the on-board AHT20 turned out to be imaginary (not fitted)
 
 ## Credits
@@ -307,8 +323,10 @@ sd_card/                 copy to the microSD card
 - Maker codes: the [IEEE OUI registry](https://standards-oui.ieee.org/) and the Bluetooth SIG company list
   (via the `bluetooth-numbers` package), turned into a table by `tools/gen_oui.py`.
   Thanks to [SquachWatch](https://github.com/skizzophrenic/SquachWatch-CYD) for the nudge to look at what
-  the radios are saying (and for its careful notes on which maker codes can be trusted). The visiting
-  Squachy on our screen is our own drawing; the real one lives on SquachWatch.
+  the radios are saying (and for its careful notes on which maker codes can be trusted).
+- **Squachy**, the visiting sasquatch, is [SquachWatch-CYD](https://github.com/skizzophrenic/SquachWatch-CYD)'s
+  mascot by skizzophrenic, used with permission (his waving frames, unaltered, in `assets/squachy/`).
+  He isn't covered by this repo's licence: see `assets/squachy/CREDITS.md` before reusing him.
 - QR codes: [Nayuki's QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) (MIT), in `lib/qrcodegen/`.
 
 <p align="center"><i>Feed the goblin. Respect the airwaves.</i></p>

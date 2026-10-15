@@ -231,6 +231,10 @@ goblin, new goblins capped at 5/IP/day and 500/day (IP stored only as a daily sa
 200k XP and other implausible numbers shadow-hide the goblin, rude names masked as "Goblin xxxx". Owner is on
 Cloudflare's Free plan: over-limit requests fail, nothing is billed. Unhide a wrongly hidden goblin in the D1
 console: `UPDATE goblins SET hidden = 0, hidden_why = NULL WHERE key = '...'`.
+Consistency hides (level/xp, wifi ratios, ratios, loot) are re-checked on every sync and heal when the
+numbers add up; "first sync xp", "xp too fast" and reasons typed by hand stick. Loot check = finds <=
+wifi + ble + brands x 22 (BLE finds count since v0.6.1; the Wi-Fi-only check hid the owner's goblin).
+See why a goblin is hidden: `SELECT name, hidden, hidden_why FROM goblins WHERE hidden = 1`.
 v0.5.2 (confirmed on hardware, on the web flasher): encounter cross-check. Engine remembers beacon ids of goblins met
 (last 200, /scout/met.txt, from v0.5.2 on); sync sends `gid` + `met`; the server counts a meeting only when
 both goblins report each other (`met_ok`, used by the goblins-met board). Beacon id squatting is ignored
@@ -258,15 +262,22 @@ Regenerate the table: `python3 tools/gen_oui.py oui.txt companies.py > src/core/
 netaddr/eui/oui.txt and bluetooth_numbers/_companies.py).
 v0.6.2 (confirmed on hardware, on the web flasher; owner: "works perfect"): SquachWatch visits. Their SquachMesh hello (BLE company 0xFFFF,
 "SQM1", version 1, appearance word, flags 0, optional 12-char name; decoded in social/SquachVisit.h from
-their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing, never
-their sprite unless the author permits), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
+their published format, not their GPL code) -> a sunset high-five overlay (our own Bigfoot drawing until v0.6.5, now
+their real Squachy with permission, see below), +40 XP once per 20 min, 2 achievements (144), brand "squachwatch"
 (Hacker gear kind) in the Hoard Book. Only seen when its owner has SquachMesh transmit on.
 Publishing a tested build: this sandbox can't download CI artifacts (api.github.com and the Azure blob
 host are blocked), so the owner uploaded firmware.bin + firmware.factory.bin from the CI run they tested
 into network-goblin-labs scout/flash/firmware/<version>/ via GitHub's web upload; then check them
 (version string, factory = same app at 0x10000) and point manifest.json / manifest-update.json / index.html at it.
+Change only the firmware/<version>/ paths and the FIRMWARE label (a global version replace once rewrote the
+esp-web-tools-10.4.0 script path and broke the flasher v0.5.0-v0.6.4), then run `sh tools/check-flashers.sh`
+in the labs repo.
 The owner opened an issue on the SquachWatch repo (2026-10-06) sharing our beacon format and asking
-whether we may use their Squachy sprite; until they say yes (and on what terms), keep our own drawing.
+whether we may use their Squachy sprite. The author said yes (2026-10-12): "a small Squachy sprite, with credit
+and a link back to this repo"; they keep the issue open to track a goblin visiting a Squachy on their side.
+v0.6.5 (on the web flasher; owner checked the binaries): the visit scene draws their real Squachy (4 waving frames cut unaltered from their README demo GIF, at 2x,
+`assets/squachy/` + CREDITS.md -> `src/ui/assets/SquachyArt.h` via gen_assets.py), with an on-screen credit line.
+Keep the credit (scene, README, CREDITS.md) whenever he's shown, and don't alter or reuse his art beyond that.
 v0.6.3 (confirmed on hardware with v0.6.4): pets. Setup > Pet (row 9; Touch test..About moved to 10-14):
 none / Pip / Lily / both, saved as settings "pet". ui/PetArt draws a cat from a coat recipe (CatCoat):
 Pip = the owner's torico (black, white bib + paws, ginger half-face), Lily = the owner's tiny tortie
